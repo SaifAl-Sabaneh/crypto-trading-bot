@@ -149,3 +149,97 @@ class EnsembleTradingModel:
         logger.info("=================================")
         
         return acc
+
+    def tune_hyperparameters(self, X, y):
+        """
+        Runs RandomizedSearchCV to find optimal hyperparameters for Random Forest and GBDT.
+        Locks in the best parameters on this model instance.
+        """
+        from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+        from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+        from security import logger
+        
+        logger.info("Initializing hyperparameter auto-tuning on pooled training data...")
+        
+        valid_idx = X.notna().all(axis=1) & y.notna()
+        X_clean = X[valid_idx]
+        y_clean = y[valid_idx]
+        
+        if len(y_clean) < 100:
+            logger.warning("Insufficient training samples to run hyperparameter tuning. Keeping default parameters.")
+            return
+            
+        # Chronological cross-validation to prevent leakage
+        tscv = TimeSeriesSplit(n_splits=3)
+        
+        # 1. Tune Random Forest
+        rf_grid = {
+            'n_estimators': [50, 100, 150, 200],
+            'max_depth': [3, 5, 7, 10],
+            'min_samples_split': [5, 10, 15, 20]
+        }
+        logger.info("Tuning Random Forest parameters...")
+        rf_search = RandomizedSearchCV(
+            estimator=RandomForestClassifier(random_state=42, class_weight="balanced"),
+            param_distributions=rf_grid,
+            n_iter=10,
+            scoring='roc_auc',
+            cv=tscv,
+            random_state=42,
+            n_jobs=-1
+        )
+        try:
+            rf_search.fit(X_clean, y_clean)
+            self.rf_model = rf_search.best_estimator_
+            logger.info(f"RF Auto-Tuning Complete. Best Params: {rf_search.best_params_}")
+        except Exception as e:
+            logger.error(f"Random Forest tuning failed: {e}. Keeping default RF model.")
+            
+        # 2. Tune Gradient Boosting
+        gb_grid = {
+            'n_estimators': [50, 100, 150],
+            'max_depth': [2, 3, 5, 7],
+            'learning_rate': [0.01, 0.05, 0.1, 0.2]
+        }
+        logger.info("Tuning Gradient Boosting parameters...")
+        gb_search = RandomizedSearchCV(
+            estimator=GradientBoostingClassifier(random_state=42),
+            param_distributions=gb_grid,
+            n_iter=10,
+            scoring='roc_auc',
+            cv=tscv,
+            random_state=42,
+            n_jobs=-1
+        )
+        try:
+            gb_search.fit(X_clean, y_clean)
+            self.gb_model = gb_search.best_estimator_
+            logger.info(f"GBDT Auto-Tuning Complete. Best Params: {gb_search.best_params_}")
+        except Exception as e:
+            logger.error(f"Gradient Boosting tuning failed: {e}. Keeping default GBDT model.")
+            
+        # 3. Optional: Tune CatBoost if available
+        if self.cb_available:
+            try:
+                from catboost import CatBoostClassifier
+                cb_grid = {
+                    'depth': [4, 6, 8],
+                    'learning_rate': [0.01, 0.05, 0.1],
+                    'iterations': [50, 100, 150]
+                }
+                logger.info("Tuning CatBoost parameters...")
+                cb_search = RandomizedSearchCV(
+                    estimator=CatBoostClassifier(verbose=0, random_seed=42),
+                    param_distributions=cb_grid,
+                    n_iter=5,
+                    scoring='roc_auc',
+                    cv=tscv,
+                    random_state=42,
+                    n_jobs=-1
+                )
+                cb_search.fit(X_clean, y_clean)
+                self.cb_model = cb_search.best_estimator_
+                logger.info(f"CatBoost Auto-Tuning Complete. Best Params: {cb_search.best_params_}")
+            except Exception as e:
+                logger.error(f"CatBoost tuning failed: {e}. Keeping default CatBoost model.")
+

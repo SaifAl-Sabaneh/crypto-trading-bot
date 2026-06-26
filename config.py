@@ -24,10 +24,15 @@ USE_TREND_FILTER = True        # Only buy when price is above SMA_TREND_WINDOW
 SMA_TREND_WINDOW = 200         # Window for long-term trend filter
 
 # ----------------- LAYER 2: ML ENSEMBLE CLASSIFIER -----------------
-FORECAST_HORIZON = 5           # Predictions forecast horizon
+FORECAST_HORIZON = 10          # Prediction lookforward horizon (e.g., 10 days for Triple Barrier)
 TRAIN_TEST_SPLIT_RATIO = 0.7   # Proportion of data used for initial split
 ML_MODEL_TYPE = "ensemble"     # Stacking ensemble: RF + GB + CatBoost + LogisticRegression
 CONFIDENCE_THRESHOLD = 0.85    # Strict confidence threshold for signals
+
+# ----------------- ADVANCED ML UPGRADES -----------------
+USE_SENTIMENT = True              # Use Crypto Fear & Greed Index daily sentiment features
+RUN_HYPERPARAMETER_TUNING = True  # Auto-optimize model parameters using RandomizedSearchCV
+
 
 # ----------------- LAYER 3: EXECUTION & POSITION SIZING -----------------
 ATR_WINDOW = 14                # Window for ATR

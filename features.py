@@ -104,21 +104,110 @@ def build_features(df):
         'SMA_Ratio'
     ]
     
+    if config.USE_SENTIMENT:
+        if 'Sentiment_Score' not in df.columns:
+            df['Sentiment_Score'] = 50.0
+            df['Sentiment_MA7'] = 50.0
+        feature_cols.extend(['Sentiment_Score', 'Sentiment_MA7'])
+        
     return feature_cols
+
+def fetch_fear_and_greed_data(limit=0):
+    """
+    Downloads Crypto Fear & Greed Index from alternative.me.
+    Returns a pandas DataFrame with columns ['Sentiment_Score', 'Sentiment_MA7'] indexed by Date.
+    """
+    import urllib.request
+    import json
+    
+    url = f"https://api.alternative.me/fng/?limit={limit}&format=json"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            records = data.get("data", [])
+            if not records:
+                raise ValueError("Empty data returned from Fear & Greed API.")
+            
+            rows = []
+            for rec in records:
+                dt = pd.to_datetime(int(rec['timestamp']), unit='s').normalize()
+                val = float(rec['value'])
+                rows.append({"Date": dt, "Sentiment_Score": val})
+                
+            fng_df = pd.DataFrame(rows).set_index("Date").sort_index()
+            fng_df['Sentiment_MA7'] = fng_df['Sentiment_Score'].rolling(7, min_periods=1).mean()
+            return fng_df
+    except Exception as e:
+        from security import logger
+        logger.error(f"Error fetching Fear & Greed data: {e}. Using fallback empty DataFrame.")
+        return pd.DataFrame(columns=['Sentiment_Score', 'Sentiment_MA7'])
+
+def calculate_triple_barrier_labels(df, horizon=10, tp_mult=2.5, sl_mult=1.0):
+    """
+    Computes labels using the Triple Barrier Method.
+    Y = 1 if the price hits the Take-Profit barrier before the Stop-Loss barrier.
+    Y = 0 if the price hits the Stop-Loss barrier first or if the horizon is reached.
+    """
+    close = df['Close'].values
+    high = df['High'].values
+    low = df['Low'].values
+    atr = df['ATR'].values
+    n = len(df)
+    
+    labels = np.zeros(n, dtype=int)
+    
+    for i in range(n):
+        if np.isnan(atr[i]) or np.isnan(close[i]):
+            labels[i] = 0
+            continue
+            
+        tp_barrier = close[i] + tp_mult * atr[i]
+        sl_barrier = close[i] - sl_mult * atr[i]
+        
+        hit_tp = False
+        hit_sl = False
+        
+        # Look forward
+        for j in range(1, horizon + 1):
+            if i + j >= n:
+                break
+                
+            curr_high = high[i + j]
+            curr_low = low[i + j]
+            
+            # Stop Loss hit?
+            curr_hit_sl = curr_low <= sl_barrier
+            # Take Profit hit?
+            curr_hit_tp = curr_high >= tp_barrier
+            
+            if curr_hit_sl and curr_hit_tp:
+                # Conservative: assume stop loss hit first
+                hit_sl = True
+                break
+            elif curr_hit_sl:
+                hit_sl = True
+                break
+            elif curr_hit_tp:
+                hit_tp = True
+                break
+                
+        if hit_tp and not hit_sl:
+            labels[i] = 1
+        else:
+            labels[i] = 0
+            
+    df['Target'] = labels
+    return labels
 
 def create_labels(df, horizon=5, min_return=0.005):
     """
-    Creates target label Y:
-    1 if price rises by more than min_return over the next 'horizon' periods, 
-    0 otherwise.
+    Fallback fixed-horizon labeler.
     """
     future_close = df['Close'].shift(-horizon)
     forward_return = (future_close - df['Close']) / df['Close']
-    
-    # Binary Labeling: 1 if positive return exceeds transaction cost/slippage buffer, 0 otherwise
     target = (forward_return > min_return).astype(int)
-    
-    # Store future return in df for analysis/verification, but it won't be used as a feature
     df['Target_Forward_Ret'] = forward_return
     df['Target'] = target
     return target
+

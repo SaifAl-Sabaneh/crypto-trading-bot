@@ -7,7 +7,7 @@ import matplotlib.dates as mdates
 
 import config
 from security import logger, HealthMonitor, network_retry, safe_atomic_write
-from features import build_features, create_labels
+from features import build_features, create_labels, fetch_fear_and_greed_data, calculate_triple_barrier_labels
 from regime_filter import MarketRegimeFilter
 from model import EnsembleTradingModel
 from backtester import PortfolioBacktester
@@ -43,6 +43,14 @@ def main():
         logger.critical("Pre-flight health checks failed. Halting bot execution.")
         sys.exit(1)
         
+    # 1.5 Fetch Fear & Greed Index Sentiment data if configured
+    fng_df = pd.DataFrame()
+    if config.USE_SENTIMENT:
+        try:
+            fng_df = fetch_fear_and_greed_data(limit=0)
+        except Exception as e:
+            logger.error(f"Failed to load Fear & Greed Index: {e}")
+        
     # 2. Process all configured assets
     processed_dfs = {}
     feature_columns = None
@@ -51,10 +59,24 @@ def main():
         try:
             df = fetch_ticker_data(ticker)
             
+            # Merge Fear & Greed Sentiment data if enabled
+            if config.USE_SENTIMENT and not fng_df.empty:
+                df = df.join(fng_df, how='left')
+                df['Sentiment_Score'] = df['Sentiment_Score'].fillna(50.0)
+                df['Sentiment_MA7'] = df['Sentiment_MA7'].fillna(50.0)
+            elif config.USE_SENTIMENT:
+                df['Sentiment_Score'] = 50.0
+                df['Sentiment_MA7'] = 50.0
+            
             # Feature calculation & Labeling
             df_copy = df.copy()
             feature_cols = build_features(df_copy)
-            create_labels(df_copy, horizon=config.FORECAST_HORIZON)
+            calculate_triple_barrier_labels(
+                df_copy, 
+                horizon=config.FORECAST_HORIZON, 
+                tp_mult=config.TP_ATR_MULT, 
+                sl_mult=config.SL_ATR_MULT
+            )
             
             if feature_columns is None:
                 feature_columns = feature_cols
@@ -116,8 +138,27 @@ def main():
     
     ensemble = EnsembleTradingModel(model_type=config.ML_MODEL_TYPE, confidence_threshold=config.CONFIDENCE_THRESHOLD)
     
+    # 2.5 Tune Hyperparameters on initial pooled training set if enabled
+    if config.RUN_HYPERPARAMETER_TUNING and len(test_dates) > 0:
+        logger.info("Preparing initial training data for hyperparameter auto-tuning...")
+        init_t = test_dates[0]
+        train_features_init = []
+        train_targets_init = []
+        
+        for ticker, df in processed_dfs.items():
+            historical_data = df.loc[df.index < init_t]
+            if len(historical_data) > 50:
+                train_features_init.append(historical_data[feature_columns])
+                train_targets_init.append(historical_data['Target'])
+                
+        if train_features_init:
+            X_train_init = pd.concat(train_features_init, axis=0)
+            y_train_init = pd.concat(train_targets_init, axis=0)
+            ensemble.tune_hyperparameters(X_train_init, y_train_init)
+        else:
+            logger.warning("No initial training data found for tuning. Using default model configurations.")
+            
     # Run daily walk-forward simulation
-    # To speed up training, we train weekly or daily. Let's do daily as requested!
     # Daily training fits the models on all history up to date 't' and predicts for date 't'.
     for i, t in enumerate(test_dates):
         # Progress logging every 30 days
