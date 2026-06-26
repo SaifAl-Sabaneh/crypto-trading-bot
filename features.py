@@ -1,0 +1,124 @@
+import pandas as pd
+import numpy as np
+import config
+
+def calculate_rsi(close_prices, window=14):
+    """Calculates the Relative Strength Index (RSI)."""
+    delta = close_prices.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    
+    # Use Wilder's exponential smoothing
+    avg_gain = gain.ewm(alpha=1/window, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/window, adjust=False).mean()
+    
+    rs = avg_gain / (avg_loss + 1e-10)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def calculate_macd(close_prices, fast_period=12, slow_period=26, signal_period=9):
+    """Calculates MACD, Signal Line, and Histogram."""
+    ema_fast = close_prices.ewm(span=fast_period, adjust=False).mean()
+    ema_slow = close_prices.ewm(span=slow_period, adjust=False).mean()
+    
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
+    macd_hist = macd_line - signal_line
+    
+    return macd_line, signal_line, macd_hist
+
+def calculate_bollinger_bands(close_prices, window=20, num_std=2):
+    """Calculates Bollinger Bands and derived metrics."""
+    middle_band = close_prices.rolling(window=window).mean()
+    rolling_std = close_prices.rolling(window=window).std()
+    
+    upper_band = middle_band + (rolling_std * num_std)
+    lower_band = middle_band - (rolling_std * num_std)
+    
+    band_width = (upper_band - lower_band) / (middle_band + 1e-10)
+    # Relative position of close price within the band (0 = lower, 1 = upper)
+    relative_position = (close_prices - lower_band) / (upper_band - lower_band + 1e-10)
+    
+    return upper_band, lower_band, band_width, relative_position
+
+def calculate_atr(df, window=14):
+    """Calculates the Average True Range (ATR)."""
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
+    
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1/window, adjust=False).mean()
+    return atr
+
+def build_features(df):
+    """
+    Calculates features for ML model.
+    Modifies df in place and returns the list of feature column names.
+    """
+    # Technical Indicators
+    df['RSI'] = calculate_rsi(df['Close'])
+    
+    macd_line, signal_line, macd_hist = calculate_macd(df['Close'])
+    df['MACD'] = macd_line
+    df['MACD_Signal'] = signal_line
+    df['MACD_Hist'] = macd_hist
+    
+    upper, lower, width, rel_pos = calculate_bollinger_bands(df['Close'])
+    df['BB_Width'] = width
+    df['BB_RelPos'] = rel_pos
+    
+    df['ATR'] = calculate_atr(df)
+    df['ATR_Pct'] = df['ATR'] / df['Close']  # ATR normalized by Close price
+    
+    # Volatility features (rolling std of log returns)
+    log_returns = np.log(df['Close'] / df['Close'].shift(1))
+    df['Vol_5'] = log_returns.rolling(5).std()
+    df['Vol_10'] = log_returns.rolling(10).std()
+    df['Vol_20'] = log_returns.rolling(20).std()
+    
+    # Momentum (rolling returns)
+    df['Ret_1'] = df['Close'].pct_change(1)
+    df['Ret_3'] = df['Close'].pct_change(3)
+    df['Ret_5'] = df['Close'].pct_change(5)
+    df['Ret_10'] = df['Close'].pct_change(10)
+    
+    # Trend (SMA ratios)
+    df['SMA_10'] = df['Close'].rolling(10).mean()
+    df['SMA_50'] = df['Close'].rolling(50).mean()
+    df['SMA_Ratio'] = df['SMA_10'] / (df['SMA_50'] + 1e-10)
+    
+    # Calculate SMA_200 for the trend filter (used in execution, not as a direct ML feature)
+    df['SMA_200'] = df['Close'].rolling(config.SMA_TREND_WINDOW).mean()
+    
+    # Drop intermediate columns that shouldn't be direct features
+    feature_cols = [
+        'RSI', 'MACD', 'MACD_Signal', 'MACD_Hist', 
+        'BB_Width', 'BB_RelPos', 'ATR_Pct', 
+        'Vol_5', 'Vol_10', 'Vol_20', 
+        'Ret_1', 'Ret_3', 'Ret_5', 'Ret_10', 
+        'SMA_Ratio'
+    ]
+    
+    return feature_cols
+
+def create_labels(df, horizon=5, min_return=0.005):
+    """
+    Creates target label Y:
+    1 if price rises by more than min_return over the next 'horizon' periods, 
+    0 otherwise.
+    """
+    future_close = df['Close'].shift(-horizon)
+    forward_return = (future_close - df['Close']) / df['Close']
+    
+    # Binary Labeling: 1 if positive return exceeds transaction cost/slippage buffer, 0 otherwise
+    target = (forward_return > min_return).astype(int)
+    
+    # Store future return in df for analysis/verification, but it won't be used as a feature
+    df['Target_Forward_Ret'] = forward_return
+    df['Target'] = target
+    return target

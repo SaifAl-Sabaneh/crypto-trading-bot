@@ -1,0 +1,424 @@
+import os
+import sys
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
+import config
+from security import logger, HealthMonitor, network_retry, safe_atomic_write
+from features import build_features, create_labels
+from regime_filter import MarketRegimeFilter
+from model import EnsembleTradingModel
+from backtester import PortfolioBacktester
+
+@network_retry(retries=3, backoff_factor=2.0)
+def fetch_ticker_data(ticker):
+    """Downloads historical asset data using yfinance with retry resiliency."""
+    logger.info(f"Downloading historical data for {ticker}...")
+    df = yf.download(
+        tickers=ticker,
+        start=config.START_DATE,
+        end=config.END_DATE,
+        interval=config.INTERVAL,
+        progress=False
+    )
+    if df.empty:
+        raise ValueError(f"No price data returned for {ticker} from Yahoo Finance.")
+        
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+        
+    # Clean volume/prices to make sure we don't have zeros
+    df = df[df['Volume'] > 0].copy()
+    logger.info(f"Downloaded {len(df)} rows for {ticker}.")
+    return df
+
+# Import yfinance inside main wrapper to ensure decorator works
+import yfinance as yf
+
+def main():
+    # 1. Run Pre-flight Health Checks
+    if not HealthMonitor.run_health_checks():
+        logger.critical("Pre-flight health checks failed. Halting bot execution.")
+        sys.exit(1)
+        
+    # 2. Process all configured assets
+    processed_dfs = {}
+    feature_columns = None
+    
+    for ticker in config.TICKERS:
+        try:
+            df = fetch_ticker_data(ticker)
+            
+            # Feature calculation & Labeling
+            df_copy = df.copy()
+            feature_cols = build_features(df_copy)
+            create_labels(df_copy, horizon=config.FORECAST_HORIZON)
+            
+            if feature_columns is None:
+                feature_columns = feature_cols
+                
+            # Layer 1: Volatility regime scaling (returns position scale 0.0 to 1.0)
+            regime_filter = MarketRegimeFilter()
+            regime_scale = regime_filter.compute_regime_sizing(df_copy)
+            
+            # Combine with long-term trend filter (SMA_200)
+            if config.USE_TREND_FILTER:
+                trend_bullish = df_copy['Close'] > df_copy['SMA_200']
+                df_copy['Entry_Allowed'] = regime_scale * trend_bullish.astype(float)
+            else:
+                df_copy['Entry_Allowed'] = regime_scale
+                
+            # Remove NaNs
+            df_clean = df_copy.dropna(subset=feature_cols + ['SMA_200']).copy()
+            
+            if len(df_clean) < 150:
+                logger.warning(f"Ticker {ticker} has insufficient data rows ({len(df_clean)}). Skipping.")
+                continue
+                
+            processed_dfs[ticker] = df_clean
+            
+        except Exception as e:
+            logger.error(f"Failed to process ticker {ticker}: {e}")
+            continue
+            
+    if not processed_dfs:
+        logger.critical("No tickers were processed successfully. Exiting.")
+        sys.exit(1)
+        
+    # 3. Setup Daily Walk-Forward Retraining Loop
+    # We split chronologically per ticker.
+    # Tickers have different length of clean data. We calculate split index per ticker.
+    test_dates_set = set()
+    test_dfs_dict = {}
+    test_allowance_dict = {}
+    test_signals_dict = {}
+    
+    for ticker, df in processed_dfs.items():
+        split_idx = int(len(df) * config.TRAIN_TEST_SPLIT_RATIO)
+        test_df = df.iloc[split_idx:].copy()
+        
+        test_dfs_dict[ticker] = test_df
+        test_allowance_dict[ticker] = test_df['Entry_Allowed'].values
+        
+        # Collect test dates for walk-forward execution
+        test_dates_set.update(test_df.index)
+        
+        # Initialize empty signals array for test set
+        test_signals_dict[ticker] = np.zeros(len(test_df))
+        
+    # Chronological unique dates in the test partition
+    test_dates = sorted(list(test_dates_set))
+    
+    logger.info(f"Starting daily walk-forward retraining simulation...")
+    logger.info(f"Total days to simulate: {len(test_dates)} dates across {len(processed_dfs)} assets.")
+    
+    ensemble = EnsembleTradingModel(model_type=config.ML_MODEL_TYPE, confidence_threshold=config.CONFIDENCE_THRESHOLD)
+    
+    # Run daily walk-forward simulation
+    # To speed up training, we train weekly or daily. Let's do daily as requested!
+    # Daily training fits the models on all history up to date 't' and predicts for date 't'.
+    for i, t in enumerate(test_dates):
+        # Progress logging every 30 days
+        if i % 30 == 0 or i == len(test_dates) - 1:
+            logger.info(f"Progress: day {i+1}/{len(test_dates)} ({t.date()})...")
+            
+        # Build pooled training set using all data *prior* to date 't'
+        train_features = []
+        train_targets = []
+        
+        for ticker, df in processed_dfs.items():
+            historical_data = df.loc[df.index < t]
+            if len(historical_data) > 50: # Only include if we have sufficient history
+                train_features.append(historical_data[feature_columns])
+                train_targets.append(historical_data['Target'])
+                
+        if not train_features:
+            continue
+            
+        X_train_pooled = pd.concat(train_features, axis=0)
+        y_train_pooled = pd.concat(train_targets, axis=0)
+        
+        # Fit Ensemble Model on all historical data up to yesterday
+        ensemble.fit(X_train_pooled, y_train_pooled)
+        
+        # Generate predictions for today (date 't')
+        for ticker in test_dfs_dict.keys():
+            df_test = test_dfs_dict[ticker]
+            if t in df_test.index:
+                # Feature vector for ticker on date 't'
+                X_today = df_test.loc[[t], feature_columns]
+                
+                # Predict signal
+                sig, _ = ensemble.predict_signals(X_today)
+                
+                # Store signal in signals array (find row index of date 't' in test set)
+                row_idx = df_test.index.get_loc(t)
+                test_signals_dict[ticker][row_idx] = sig[0]
+                
+    logger.info("Daily walk-forward retraining loop completed.")
+    
+    # 4. Layer 3: Run Portfolio Backtester with Slippage & Circuit Breaker
+    logger.info("Initializing multi-asset portfolio backtest...")
+    backtester = PortfolioBacktester()
+    equity_series, trade_log = backtester.run(test_dfs_dict, test_signals_dict, test_allowance_dict)
+    
+    # Analyze portfolio metrics
+    metrics = backtester.analyze_performance(equity_series, trade_log, test_dfs_dict)
+    
+    # 5. Print Trade Log Sample
+    if len(trade_log) > 0:
+        logger.info("\nExecuted Portfolio Trades (Slippage Adjusted):")
+        cols_to_print = ['Ticker', 'EntryTime', 'ExitTime', 'EntryPrice', 'ExitPrice', 'PnL_Pct', 'PnL_USD', 'ExitReason']
+        logger.info("\n" + trade_log[cols_to_print].to_string())
+    else:
+        logger.info("\nNo trades were executed. The system protected capital by staying in cash.")
+        
+    # 6. Generate and Save Portfolio Performance Chart
+    plt.figure(figsize=(12, 7))
+    plt.style.use('seaborn-v0_8-darkgrid' if 'seaborn-v0_8-darkgrid' in plt.style.available else 'default')
+    
+    bh_series_list = []
+    for ticker, test_df in test_dfs_dict.items():
+        norm_bh = (test_df['Close'] / test_df['Close'].iloc[0]) * config.INITIAL_CAPITAL
+        bh_series_list.append(norm_bh)
+        
+    bh_df = pd.concat(bh_series_list, axis=1).ffill().bfill()
+    average_bh_equity = bh_df.mean(axis=1)
+    
+    plt.plot(equity_series.index, equity_series.values, label=f"Ultimate 3-Layer Strategy (Daily Retrained)", color='#00cfb4', linewidth=2.5)
+    plt.plot(average_bh_equity.index, average_bh_equity.values, label="Equal-Weighted Buy & Hold Benchmark", color='#7f8c8d', linestyle='--', linewidth=1.5)
+    
+    # Highlight Circuit Breaker trigger if it happened
+    if backtester.circuit_breaker_tripped:
+        cb_date = backtester.circuit_breaker_date
+        plt.axvline(cb_date, color='red', linestyle=':', linewidth=2, label="Circuit Breaker Tripped")
+        # Shade everything after circuit breaker in red
+        plt.fill_between(test_dates, equity_series.min() * 0.9, equity_series.max() * 1.1, 
+                         where=[d >= cb_date for d in test_dates], color='red', alpha=0.05)
+        
+    plt.title("Ultimate Fail-Proof Portfolio Bot Performance (Daily Retrained)", fontsize=14, fontweight='bold', pad=15)
+    plt.xlabel("Date", fontsize=12)
+    plt.ylabel("Portfolio Net Asset Value ($)", fontsize=12)
+    plt.legend(loc="upper left", frameon=True, facecolor='white', edgecolor='none')
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    plt.gca().xaxis.set_major_locator(mdates.AutoDateLocator())
+    plt.gcf().autofmt_xdate()
+    plt.tight_layout()
+    
+    # Save the chart to workspace
+    workspace_chart_path = "portfolio_performance.png"
+    plt.savefig(workspace_chart_path, dpi=150)
+    logger.info(f"Portfolio performance chart saved to workspace: {workspace_chart_path}")
+    
+    # Save to Gemini artifact directory if available
+    artifact_dir = "C:/Users/Asus/.gemini/antigravity/brain/f070070a-c3f1-4585-a6e7-0c5f2e92c4dc"
+    if os.path.exists(artifact_dir):
+        artifact_chart_path = os.path.join(artifact_dir, "portfolio_performance.png")
+        plt.savefig(artifact_chart_path, dpi=150)
+        logger.info(f"Portfolio performance chart saved to artifact folder: {artifact_chart_path}")
+        
+    plt.close()
+    
+    # 7. Write dynamic Javascript file for the dashboard (bypasses browser CORS restrictions)
+    import json
+    from datetime import datetime
+    
+    # Format equity curve for javascript plotting
+    equity_curve_data = []
+    for d, val in zip(equity_series.index, equity_series.values):
+        equity_curve_data.append({
+            "date": d.strftime("%Y-%m-%d"),
+            "val": float(val)
+        })
+        
+    benchmark_curve_data = []
+    for d, val in zip(average_bh_equity.index, average_bh_equity.values):
+        benchmark_curve_data.append({
+            "date": d.strftime("%Y-%m-%d"),
+            "val": float(val)
+        })
+        
+    # Format trade history list
+    trades_list = []
+    if len(trade_log) > 0:
+        for _, row in trade_log.iterrows():
+            trades_list.append({
+                "ticker": str(row['Ticker']),
+                "entry_time": row['EntryTime'].strftime("%Y-%m-%d") if isinstance(row['EntryTime'], pd.Timestamp) else str(row['EntryTime']),
+                "exit_time": row['ExitTime'].strftime("%Y-%m-%d") if isinstance(row['ExitTime'], pd.Timestamp) else str(row['ExitTime']),
+                "entry_price": float(row['EntryPrice']),
+                "exit_price": float(row['ExitPrice']),
+                "pnl_pct": float(row['PnL_Pct']),
+                "pnl_usd": float(row['PnL_USD']),
+                "exit_reason": str(row['ExitReason'])
+            })
+            
+    portfolio_state = {
+        "ticker_list": config.TICKERS,
+        "initial_capital": float(config.INITIAL_CAPITAL),
+        "final_value": float(equity_series.iloc[-1]),
+        "return_pct": float(metrics['strategy_return']),
+        "benchmark_return_pct": float(metrics['bh_return']),
+        "max_drawdown": float(metrics['max_drawdown']),
+        "sharpe_ratio": float(metrics['sharpe_ratio']),
+        "trades_count": int(metrics['total_trades']),
+        "win_rate": float(metrics['win_rate']),
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "circuit_breaker_tripped": bool(backtester.circuit_breaker_tripped),
+        "circuit_breaker_date": str(backtester.circuit_breaker_date.date()) if backtester.circuit_breaker_tripped else "",
+        "equity_curve": equity_curve_data,
+        "benchmark_curve": benchmark_curve_data,
+        "trades": trades_list
+    }
+    
+    js_content = f"const PORTFOLIO_STATE = {json.dumps(portfolio_state, indent=2)};"
+    safe_atomic_write("portfolio_state.js", js_content)
+    logger.info("Portfolio state JS variables written to 'portfolio_state.js' atomically.")
+    
+    # 8. Generate HTML Performance Report (report.html)
+    html_report = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ultimate Trading Bot - Backtest Performance Report</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        body {{
+            font-family: 'Outfit', sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+        }}
+    </style>
+</head>
+<body class="p-8">
+    <div class="max-w-6xl mx-auto bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
+        <div class="flex justify-between items-center border-b border-gray-800 pb-6 mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-teal-400">Backtest Performance Report</h1>
+                <p class="text-sm text-gray-400 mt-1">Generated dynamically on {portfolio_state['last_updated']}</p>
+            </div>
+            <div class="text-right">
+                <span class="px-4 py-1.5 rounded-full text-xs font-semibold {'bg-red-900/30 text-red-400' if portfolio_state['circuit_breaker_tripped'] else 'bg-green-900/30 text-green-400'}">
+                    {'🚨 CIRCUIT BREAKER TRIPPED' if portfolio_state['circuit_breaker_tripped'] else '🛡️ SYSTEM HEALTHY'}
+                </span>
+            </div>
+        </div>
+        
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-gray-800/40 border border-gray-800 p-6 rounded-xl">
+                <p class="text-xs text-gray-450 uppercase tracking-wider">Final Value</p>
+                <p class="text-2xl font-bold text-white mt-1">${portfolio_state['final_value']:,.2f}</p>
+            </div>
+            <div class="bg-gray-800/40 border border-gray-800 p-6 rounded-xl">
+                <p class="text-xs text-gray-450 uppercase tracking-wider">Strategy Return</p>
+                <p class="text-2xl font-bold text-teal-400 mt-1">{portfolio_state['return_pct']:.2%}</p>
+            </div>
+            <div class="bg-gray-800/40 border border-gray-800 p-6 rounded-xl">
+                <p class="text-xs text-gray-450 uppercase tracking-wider">Market Return</p>
+                <p class="text-2xl font-bold text-gray-450 mt-1">{portfolio_state['benchmark_return_pct']:.2%}</p>
+            </div>
+            <div class="bg-gray-800/40 border border-gray-800 p-6 rounded-xl">
+                <p class="text-xs text-gray-450 uppercase tracking-wider">Max Drawdown</p>
+                <p class="text-2xl font-bold text-rose-500 mt-1">{portfolio_state['max_drawdown']:.2%}</p>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-gray-800/40 border border-gray-800 p-6 rounded-xl">
+                <p class="text-xs text-gray-450 uppercase tracking-wider">Sharpe Ratio</p>
+                <p class="text-2xl font-bold text-white mt-1">{portfolio_state['sharpe_ratio']:.2f}</p>
+            </div>
+            <div class="bg-gray-800/40 border border-gray-800 p-6 rounded-xl">
+                <p class="text-xs text-gray-450 uppercase tracking-wider">Total Trades</p>
+                <p class="text-2xl font-bold text-white mt-1">{portfolio_state['trades_count']}</p>
+            </div>
+            <div class="bg-gray-800/40 border border-gray-800 p-6 rounded-xl">
+                <p class="text-xs text-gray-450 uppercase tracking-wider">Win Rate</p>
+                <p class="text-2xl font-bold text-teal-400 mt-1">{portfolio_state['win_rate']:.2%}</p>
+            </div>
+            <div class="bg-gray-800/40 border border-gray-800 p-6 rounded-xl">
+                <p class="text-xs text-gray-450 uppercase tracking-wider">Outperformance</p>
+                <p class="text-2xl font-bold text-teal-400 mt-1">{(portfolio_state['return_pct'] - portfolio_state['benchmark_return_pct']):+.2%}</p>
+            </div>
+        </div>
+
+        <!-- Chart Section -->
+        <div class="mb-8 bg-gray-850 border border-gray-800 rounded-xl p-6">
+            <h2 class="text-xl font-semibold text-white mb-4">Equity Curve</h2>
+            <img src="portfolio_performance.png" alt="Equity Chart" class="w-full rounded-lg border border-gray-800">
+        </div>
+
+        <!-- Trades Table -->
+        <div class="bg-gray-850 border border-gray-800 rounded-xl p-6">
+            <h2 class="text-xl font-semibold text-white mb-4">Trade Logs</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-gray-800 text-gray-400 text-sm">
+                            <th class="pb-3 font-semibold">Ticker</th>
+                            <th class="pb-3 font-semibold">Entry Date</th>
+                            <th class="pb-3 font-semibold">Exit Date</th>
+                            <th class="pb-3 font-semibold">Entry Price</th>
+                            <th class="pb-3 font-semibold">Exit Price</th>
+                            <th class="pb-3 font-semibold">PnL %</th>
+                            <th class="pb-3 font-semibold">PnL USD</th>
+                            <th class="pb-3 font-semibold">Exit Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800/50 text-sm">
+"""
+    for tr in trades_list:
+        pnl_class = "text-emerald-400" if tr['pnl_pct'] > 0 else ("text-rose-500" if tr['pnl_pct'] < 0 else "text-gray-400")
+        html_report += f"""
+                        <tr>
+                            <td class="py-3 font-semibold text-white">{tr['ticker']}</td>
+                            <td class="py-3 text-gray-400">{tr['entry_time']}</td>
+                            <td class="py-3 text-gray-400">{tr['exit_time']}</td>
+                            <td class="py-3 text-gray-300">${tr['entry_price']:.2f}</td>
+                            <td class="py-3 text-gray-300">${tr['exit_price']:.2f}</td>
+                            <td class="py-3 font-semibold {pnl_class}">{tr['pnl_pct']:+.2%}</td>
+                            <td class="py-3 font-semibold {pnl_class}">${tr['pnl_usd']:+,.2f}</td>
+                            <td class="py-3 text-gray-405"><span class="px-2 py-0.5 rounded text-xs bg-gray-850 border border-gray-800">{tr['exit_reason']}</span></td>
+                        </tr>"""
+    if not trades_list:
+        html_report += """
+                        <tr>
+                            <td colspan="8" class="py-6 text-center text-gray-500">No trades executed during this backtest timeframe.</td>
+                        </tr>"""
+                        
+    html_report += """
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+    safe_atomic_write("report.html", html_report)
+    logger.info("Performance HTML report written to 'report.html' atomically.")
+    
+    # 9. Send summary report notification to Discord/Telegram
+    summary_msg = (
+        f"📊 **Backtest Simulation Completed**\n"
+        f"• **Asset Tickers**: {', '.join(config.TICKERS)}\n"
+        f"• **Initial Capital**: ${config.INITIAL_CAPITAL:,.2f}\n"
+        f"• **Final Value**: ${equity_series.iloc[-1]:,.2f}\n"
+        f"• **Strategy Return**: {metrics['strategy_return']:.2%}\n"
+        f"• **Market Return (B&H)**: {metrics['bh_return']:.2%}\n"
+        f"• **Outperformance**: {metrics['strategy_return'] - metrics['bh_return']:+.2%}\n"
+        f"• **Max Drawdown**: {metrics['max_drawdown']:.2%}\n"
+        f"• **Total Trades Taken**: {metrics['total_trades']}\n"
+        f"• **Win Rate**: {metrics['win_rate']:.2%}\n"
+        f"• **Circuit Breaker Tripped**: {backtester.circuit_breaker_tripped}"
+    )
+    from security import send_push_notification
+    send_push_notification(summary_msg)
+    
+    logger.info("Bot execution completed successfully.")
+
+if __name__ == "__main__":
+    main()

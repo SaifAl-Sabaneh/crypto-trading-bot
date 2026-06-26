@@ -1,0 +1,20 @@
+# Local Environment Secrets
+.env
+
+# Dynamic State & Logs
+portfolio_state.js
+*.log
+cron_log.txt
+execution_history.log
+executed_trades.csv
+
+# Charts & Visual Reports
+*.png
+report.html
+
+# Python Cache & Visual Studio
+__pycache__/
+catboost_info/
+*.pyc
+.vscode/
+.idea/

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Trading Bot - Live Dashboard</title>
+    <!-- Tailwind CSS for modern responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for interactive canvas charting -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Font Outfit -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+            color: #f8fafc;
+        }
+        /* Custom Glassmorphism styling */
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center p-6 glass-panel rounded-2xl gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold text-teal-400 tracking-tight flex items-center gap-2">
+                    🤖 Ultimate Trading Bot
+                </h1>
+                <p class="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold">
+                    Real-time Autonomous Portfolio Dashboard
+                </p>
+            </div>
+            
+            <div class="flex flex-wrap gap-4 items-center">
+                <div class="text-xs text-slate-400">
+                    Last Updated: <span id="last-updated-val" class="font-bold text-slate-200">-</span>
+                </div>
+                <div id="system-status" class="px-4 py-1.5 rounded-full text-xs font-semibold">
+                    Checking Status...
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
+            <div class="p-5 glass-panel rounded-2xl">
+                <p class="text-xs text-slate-450 uppercase font-semibold tracking-wider">Portfolio NAV</p>
+                <p id="nav-val" class="text-xl font-bold mt-1 text-white">$0.00</p>
+            </div>
+            <div class="p-5 glass-panel rounded-2xl">
+                <p class="text-xs text-slate-455 uppercase font-semibold tracking-wider">Total Return</p>
+                <p id="return-val" class="text-xl font-bold mt-1 text-teal-400">0.00%</p>
+            </div>
+            <div class="p-5 glass-panel rounded-2xl">
+                <p class="text-xs text-slate-455 uppercase font-semibold tracking-wider">Market B&H</p>
+                <p id="benchmark-val" class="text-xl font-bold mt-1 text-slate-400">0.00%</p>
+            </div>
+            <div class="p-5 glass-panel rounded-2xl">
+                <p class="text-xs text-slate-455 uppercase font-semibold tracking-wider">Max Drawdown</p>
+                <p id="drawdown-val" class="text-xl font-bold mt-1 text-rose-500">0.00%</p>
+            </div>
+            <div class="p-5 glass-panel rounded-2xl">
+                <p class="text-xs text-slate-455 uppercase font-semibold tracking-wider">Win Rate</p>
+                <p id="winrate-val" class="text-xl font-bold mt-1 text-teal-400">0.00%</p>
+            </div>
+            <div class="p-5 glass-panel rounded-2xl">
+                <p class="text-xs text-slate-455 uppercase font-semibold tracking-wider">Total Trades</p>
+                <p id="trades-val" class="text-xl font-bold mt-1 text-white">0</p>
+            </div>
+        </div>
+
+        <!-- Chart Section -->
+        <div class="p-6 glass-panel rounded-2xl space-y-4">
+            <h2 class="text-xl font-bold text-white tracking-wide">Interactive Performance Comparison</h2>
+            <div class="w-full h-[400px]">
+                <canvas id="performanceChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Trades & Logs Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Trade Logs -->
+            <div class="lg:col-span-2 p-6 glass-panel rounded-2xl space-y-4 overflow-hidden">
+                <h2 class="text-xl font-bold text-white tracking-wide">Transaction History</h2>
+                <div class="overflow-x-auto w-full max-h-[300px] overflow-y-auto">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-800 text-slate-400 font-semibold text-xs tracking-wider uppercase">
+                                <th class="pb-2">Ticker</th>
+                                <th class="pb-2">Entry</th>
+                                <th class="pb-2">Exit</th>
+                                <th class="pb-2">Entry Price</th>
+                                <th class="pb-2">Exit Price</th>
+                                <th class="pb-2">PnL %</th>
+                                <th class="pb-2">PnL USD</th>
+                                <th class="pb-2">Exit Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-tbody" class="divide-y divide-slate-800/30">
+                            <!-- Injected by script -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Ticker Configurations & Health -->
+            <div class="p-6 glass-panel rounded-2xl space-y-4">
+                <h2 class="text-xl font-bold text-white tracking-wide">Active Assets</h2>
+                <div id="tickers-list" class="flex flex-wrap gap-2">
+                    <!-- Injected by script -->
+                </div>
+                <div class="border-t border-slate-800/60 pt-4 space-y-3">
+                    <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Trading System Rules</h3>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="p-2.5 bg-slate-900/40 rounded border border-slate-800/60">
+                            <p class="text-slate-400">Position Allocation</p>
+                            <p class="font-bold text-white mt-0.5">Max 25% per Trade</p>
+                        </div>
+                        <div class="p-2.5 bg-slate-900/40 rounded border border-slate-800/60">
+                            <p class="text-slate-400">Ensemble Brain</p>
+                            <p class="font-bold text-teal-400 mt-0.5">RF + GBDT + LR + CB</p>
+                        </div>
+                        <div class="p-2.5 bg-slate-900/40 rounded border border-slate-800/60">
+                            <p class="text-slate-400">Trend Confirmation</p>
+                            <p class="font-bold text-teal-400 mt-0.5">SMA 200 Days [ON]</p>
+                        </div>
+                        <div class="p-2.5 bg-slate-900/40 rounded border border-slate-800/60">
+                            <p class="text-slate-400">Safety net</p>
+                            <p class="font-bold text-rose-500 mt-0.5">Emergency Halted at 5%</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Load the dynamically generated JS variables (Bypasses local file CORS) -->
+    <script src="portfolio_state.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            if (typeof PORTFOLIO_STATE === "undefined") {
+                console.error("Failed to load portfolio_state.js");
+                return;
+            }
+            
+            const state = PORTFOLIO_STATE;
+            
+            // 1. Populate Header info
+            document.getElementById("last-updated-val").innerText = state.last_updated;
+            
+            const statusEl = document.getElementById("system-status");
+            if (state.circuit_breaker_tripped) {
+                statusEl.innerText = "🚨 HALTED (CIRCUIT BREAKER)";
+                statusEl.className = "px-4 py-1.5 rounded-full text-xs font-semibold bg-red-900/40 text-red-400 border border-red-800/60";
+            } else {
+                statusEl.innerText = "🛡️ SYSTEM HEALTHY";
+                statusEl.className = "px-4 py-1.5 rounded-full text-xs font-semibold bg-green-900/40 text-green-400 border border-green-800/60";
+            }
+
+            // 2. Populate Metrics Cards
+            document.getElementById("nav-val").innerText = "$" + state.final_value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            
+            const retEl = document.getElementById("return-val");
+            retEl.innerText = (state.return_pct * 100).toFixed(2) + "%";
+            if (state.return_pct > 0) retEl.className = "text-xl font-bold mt-1 text-emerald-400";
+            else if (state.return_pct < 0) retEl.className = "text-xl font-bold mt-1 text-rose-500";
+            else retEl.className = "text-xl font-bold mt-1 text-slate-300";
+            
+            const benchEl = document.getElementById("benchmark-val");
+            benchEl.innerText = (state.benchmark_return_pct * 100).toFixed(2) + "%";
+            if (state.benchmark_return_pct > 0) benchEl.className = "text-xl font-bold mt-1 text-emerald-400";
+            else if (state.benchmark_return_pct < 0) benchEl.className = "text-xl font-bold mt-1 text-rose-500";
+            
+            document.getElementById("drawdown-val").innerText = (state.max_drawdown * 100).toFixed(2) + "%";
+            document.getElementById("winrate-val").innerText = (state.win_rate * 100).toFixed(2) + "%";
+            document.getElementById("trades-val").innerText = state.trades_count;
+
+            // 3. Populate Tickered assets list
+            const tickerContainer = document.getElementById("tickers-list");
+            state.ticker_list.forEach(ticker => {
+                const badge = document.createElement("span");
+                badge.className = "px-3 py-1 bg-slate-900/60 border border-slate-800 rounded-lg text-xs font-semibold text-teal-400";
+                badge.innerText = ticker;
+                tickerContainer.appendChild(badge);
+            });
+
+            // 4. Populate Trades Table
+            const tbody = document.getElementById("trades-tbody");
+            if (state.trades.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-slate-500">No trades executed during this timeframe.</td></tr>`;
+            } else {
+                state.trades.forEach(t => {
+                    const row = document.createElement("tr");
+                    row.className = "hover:bg-slate-800/10 transition-colors";
+                    
+                    const pnlClass = t.pnl_pct > 0 ? "text-emerald-400" : (t.pnl_pct < 0 ? "text-rose-500" : "text-slate-400");
+                    
+                    row.innerHTML = `
+                        <td class="py-3 font-semibold text-white">${t.ticker}</td>
+                        <td class="py-3 text-slate-400">${t.entry_time}</td>
+                        <td class="py-3 text-slate-400">${t.exit_time}</td>
+                        <td class="py-3 text-slate-300">$${t.entry_price.toFixed(2)}</td>
+                        <td class="py-3 text-slate-300">$${t.exit_price.toFixed(2)}</td>
+                        <td class="py-3 font-bold ${pnlClass}">${t.pnl_pct > 0 ? '+' : ''}${(t.pnl_pct * 100).toFixed(2)}%</td>
+                        <td class="py-3 font-bold ${pnlClass}">${t.pnl_usd > 0 ? '+' : ''}$${t.pnl_usd.toFixed(2)}</td>
+                        <td class="py-3"><span class="px-2 py-0.5 rounded text-xs bg-slate-900/50 border border-slate-800 text-slate-300">${t.exit_reason}</span></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            // 5. Draw the Chart.js Canvas Plot
+            const dates = state.equity_curve.map(point => point.date);
+            const strategyVals = state.equity_curve.map(point => point.val);
+            const benchmarkVals = state.benchmark_curve.map(point => point.val);
+            
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: 'Ultimate Trading Strategy',
+                            data: strategyVals,
+                            borderColor: '#00cfb4',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.1,
+                            pointRadius: 0,
+                            pointHoverRadius: 5
+                        },
+                        {
+                            label: 'Equal-Weighted Market Index (Buy & Hold)',
+                            data: benchmarkVals,
+                            borderColor: '#64748b',
+                            borderWidth: 1.5,
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.1,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#cbd5e1', font: { family: 'Outfit' } }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            bodyFont: { family: 'Outfit' },
+                            titleFont: { family: 'Outfit' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(100,116,139,0.05)' },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(100,116,139,0.05)' },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
