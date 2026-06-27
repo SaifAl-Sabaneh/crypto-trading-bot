@@ -109,7 +109,7 @@ def main():
                 df_copy, 
                 horizon=config.FORECAST_HORIZON, 
                 tp_mult=config.TP_ATR_MULT, 
-                sl_mult=config.SL_ATR_MULT
+                sl_mult=config.SL_ATR_MULT_LONG
             )
             
             if feature_columns is None:

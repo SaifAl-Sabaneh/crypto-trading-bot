@@ -41,11 +41,12 @@ FEAR_GREED_FEAR_FLOOR = 15        # Fear floor (only blocks shorts at absolute p
 # ----------------- LAYER 3: EXECUTION & POSITION SIZING -----------------
 ATR_WINDOW = 14                # Window for ATR
 TP_ATR_MULT = 2.5              # Take-Profit multiplier
-SL_ATR_MULT = 1.0              # Stop-Loss multiplier
+SL_ATR_MULT_LONG = 1.0         # Stop-Loss multiplier for long positions
+SL_ATR_MULT_SHORT = 1.8        # Stop-Loss multiplier for short positions (widened to absorb squeeze noise)
 ENABLE_BREAKEVEN = True        # Move SL to Entry once price moves 1.0 * ATR in our favor
 
 INITIAL_CAPITAL = 10000.0      # Starting backtest capital in USD
-MAX_ALLOCATION_PER_TRADE = 0.25# Max portfolio allocation per trade (25% for diversification)
+MAX_ALLOCATION_PER_TRADE = 0.40# Max portfolio allocation per trade (40% for optimal capital scaling)
 
 # ----------------- REAL-WORLD RISK PROTECTIONS -----------------
 SLIPPAGE_PENALTY_PCT = 0.0015  # 0.15% slippage/fee penalty applied to every trade exit

@@ -14,14 +14,16 @@ class PortfolioBacktester:
     def __init__(self, initial_capital=config.INITIAL_CAPITAL, 
                  max_alloc=config.MAX_ALLOCATION_PER_TRADE,
                  tp_mult=config.TP_ATR_MULT, 
-                 sl_mult=config.SL_ATR_MULT,
+                 sl_mult_long=config.SL_ATR_MULT_LONG,
+                 sl_mult_short=config.SL_ATR_MULT_SHORT,
                  enable_breakeven=config.ENABLE_BREAKEVEN,
                  slippage_penalty=config.SLIPPAGE_PENALTY_PCT,
                  drawdown_limit=config.WEEKLY_DRAWDOWN_LIMIT):
         self.initial_capital = initial_capital
         self.max_alloc = max_alloc
         self.tp_mult = tp_mult
-        self.sl_mult = sl_mult
+        self.sl_mult_long = sl_mult_long
+        self.sl_mult_short = sl_mult_short
         self.enable_breakeven = enable_breakeven
         self.slippage_penalty = slippage_penalty
         self.drawdown_limit = drawdown_limit
@@ -275,7 +277,7 @@ class PortfolioBacktester:
                             'entry_price': entry_price,
                             'entry_time': date,
                             'direction': 'long',
-                            'sl': entry_price - (self.sl_mult * sl_factor * atr_val),
+                            'sl': entry_price - (self.sl_mult_long * sl_factor * atr_val),
                             'tp': entry_price + (self.tp_mult * tp_factor * atr_val),
                             'entry_atr': atr_val,
                             'breakeven': False
@@ -291,7 +293,7 @@ class PortfolioBacktester:
                             'entry_price': entry_price,
                             'entry_time': date,
                             'direction': 'short',
-                            'sl': entry_price + (1.5 * sl_factor * atr_val), # Widened short SL to 1.5x ATR to prevent short squeeze noise
+                            'sl': entry_price + (self.sl_mult_short * sl_factor * atr_val),
                             'tp': entry_price - (self.tp_mult * tp_factor * atr_val),
                             'entry_atr': atr_val,
                             'breakeven': False
