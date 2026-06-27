@@ -55,6 +55,39 @@ def calculate_atr(df, window=14):
     atr = tr.ewm(alpha=1/window, adjust=False).mean()
     return atr
 
+def calculate_stochastic(df, window=14):
+    """Calculates Stochastic Oscillator (%K and %D)."""
+    low_min = df['Low'].rolling(window).min()
+    high_max = df['High'].rolling(window).max()
+    k = 100 * (df['Close'] - low_min) / (high_max - low_min + 1e-10)
+    d = k.rolling(3).mean()
+    return k, d
+
+def calculate_adx(df, window=14):
+    """Calculates Average Directional Index (ADX) to capture trend strength."""
+    upmove = df['High'] - df['High'].shift(1)
+    downmove = df['Low'].shift(1) - df['Low']
+    
+    plus_dm = np.where((upmove > downmove) & (upmove > 0), upmove, 0.0)
+    minus_dm = np.where((downmove > upmove) & (downmove > 0), downmove, 0.0)
+    
+    # Use 1-day True Range rolling sum for smooth TR
+    tr1 = df['High'] - df['Low']
+    tr2 = (df['High'] - df['Close'].shift(1)).abs()
+    tr3 = (df['Low'] - df['Close'].shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    
+    tr_smooth = tr.rolling(window).sum()
+    plus_dm_smooth = pd.Series(plus_dm, index=df.index).rolling(window).sum()
+    minus_dm_smooth = pd.Series(minus_dm, index=df.index).rolling(window).sum()
+    
+    plus_di = 100 * plus_dm_smooth / (tr_smooth + 1e-10)
+    minus_di = 100 * minus_dm_smooth / (tr_smooth + 1e-10)
+    
+    dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+    adx = dx.rolling(window).mean()
+    return adx
+
 def build_features(df):
     """
     Calculates features for ML model.
@@ -74,6 +107,12 @@ def build_features(df):
     
     df['ATR'] = calculate_atr(df)
     df['ATR_Pct'] = df['ATR'] / df['Close']  # ATR normalized by Close price
+    
+    # Stochastic & ADX
+    stoch_k, stoch_d = calculate_stochastic(df)
+    df['Stoch_K'] = stoch_k
+    df['Stoch_D'] = stoch_d
+    df['ADX'] = calculate_adx(df)
     
     # Volatility features (rolling std of log returns)
     log_returns = np.log(df['Close'] / df['Close'].shift(1))
@@ -101,7 +140,7 @@ def build_features(df):
         'BB_Width', 'BB_RelPos', 'ATR_Pct', 
         'Vol_5', 'Vol_10', 'Vol_20', 
         'Ret_1', 'Ret_3', 'Ret_5', 'Ret_10', 
-        'SMA_Ratio'
+        'SMA_Ratio', 'Stoch_K', 'Stoch_D', 'ADX'
     ]
     
     if config.USE_SENTIMENT:

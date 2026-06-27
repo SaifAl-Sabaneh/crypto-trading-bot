@@ -174,7 +174,12 @@ def main():
     logger.info(f"Starting daily walk-forward retraining simulation...")
     logger.info(f"Total days to simulate: {len(test_dates)} dates across {len(processed_dfs)} assets.")
     
-    ensemble = EnsembleTradingModel(
+    crypto_ensemble = EnsembleTradingModel(
+        model_type=config.ML_MODEL_TYPE, 
+        conf_thresh_long=config.CONFIDENCE_THRESHOLD_LONG, 
+        conf_thresh_short=config.CONFIDENCE_THRESHOLD_SHORT
+    )
+    equity_ensemble = EnsembleTradingModel(
         model_type=config.ML_MODEL_TYPE, 
         conf_thresh_long=config.CONFIDENCE_THRESHOLD_LONG, 
         conf_thresh_short=config.CONFIDENCE_THRESHOLD_SHORT
@@ -184,63 +189,76 @@ def main():
     if config.RUN_HYPERPARAMETER_TUNING and len(test_dates) > 0:
         logger.info("Preparing initial training data for hyperparameter auto-tuning...")
         init_t = test_dates[0]
-        train_features_init = []
-        train_targets_init = []
+        train_features_init_crypto = []
+        train_targets_init_crypto = []
+        train_features_init_equity = []
+        train_targets_init_equity = []
         
         for ticker, df in processed_dfs.items():
             historical_data = df.loc[df.index < init_t]
             if len(historical_data) > 50:
-                train_features_init.append(historical_data[feature_columns])
-                train_targets_init.append(historical_data['Target'])
-                
-        if train_features_init:
-            X_train_init = pd.concat(train_features_init, axis=0)
-            y_train_init = pd.concat(train_targets_init, axis=0)
-            ensemble.tune_hyperparameters(X_train_init, y_train_init)
-        else:
-            logger.warning("No initial training data found for tuning. Using default model configurations.")
+                if ticker in config.SHORTABLE_TICKERS:
+                    train_features_init_crypto.append(historical_data[feature_columns])
+                    train_targets_init_crypto.append(historical_data['Target'])
+                else:
+                    train_features_init_equity.append(historical_data[feature_columns])
+                    train_targets_init_equity.append(historical_data['Target'])
+                    
+        if train_features_init_crypto:
+            X_train_init_c = pd.concat(train_features_init_crypto, axis=0)
+            y_train_init_c = pd.concat(train_targets_init_crypto, axis=0)
+            crypto_ensemble.tune_hyperparameters(X_train_init_c, y_train_init_c)
+        if train_features_init_equity:
+            X_train_init_e = pd.concat(train_features_init_equity, axis=0)
+            y_train_init_e = pd.concat(train_targets_init_equity, axis=0)
+            equity_ensemble.tune_hyperparameters(X_train_init_e, y_train_init_e)
             
     # Run daily walk-forward simulation
-    # Daily training fits the models on all history up to date 't' and predicts for date 't'.
     for i, t in enumerate(test_dates):
-        # Progress logging every 30 days
         if i % 30 == 0 or i == len(test_dates) - 1:
             logger.info(f"Progress: day {i+1}/{len(test_dates)} ({t.date()})...")
             
-        # Build pooled training set using all data *prior* to date 't'
-        train_features = []
-        train_targets = []
+        # Build pooled training sets separately
+        train_features_crypto = []
+        train_targets_crypto = []
+        train_features_equity = []
+        train_targets_equity = []
         
         for ticker, df in processed_dfs.items():
             historical_data = df.loc[df.index < t]
-            if len(historical_data) > 50: # Only include if we have sufficient history
-                train_features.append(historical_data[feature_columns])
-                train_targets.append(historical_data['Target'])
-                
-        if not train_features:
-            continue
-            
-        X_train_pooled = pd.concat(train_features, axis=0)
-        y_train_pooled = pd.concat(train_targets, axis=0)
-        
-        # Retrain primary ensemble and secondary meta-labeler weekly to optimize simulation speed
+            if len(historical_data) > 50:
+                if ticker in config.SHORTABLE_TICKERS:
+                    train_features_crypto.append(historical_data[feature_columns])
+                    train_targets_crypto.append(historical_data['Target'])
+                else:
+                    train_features_equity.append(historical_data[feature_columns])
+                    train_targets_equity.append(historical_data['Target'])
+                    
+        # Retrain primary ensembles and secondary meta-labelers weekly
         if i % 7 == 0 or i == 0 or i == len(test_dates) - 1:
-            # Fit Ensemble Model on all historical data up to yesterday
-            ensemble.fit(X_train_pooled, y_train_pooled)
-            # Train De Prado's meta-labeler on out-of-fold trade predictions
-            ensemble.fit_meta_model(X_train_pooled, y_train_pooled)
+            if train_features_crypto:
+                X_train_c = pd.concat(train_features_crypto, axis=0)
+                y_train_c = pd.concat(train_targets_crypto, axis=0)
+                crypto_ensemble.fit(X_train_c, y_train_c)
+                crypto_ensemble.fit_meta_model(X_train_c, y_train_c)
+            if train_features_equity:
+                X_train_e = pd.concat(train_features_equity, axis=0)
+                y_train_e = pd.concat(train_targets_equity, axis=0)
+                equity_ensemble.fit(X_train_e, y_train_e)
+                equity_ensemble.fit_meta_model(X_train_e, y_train_e)
         
         # Generate predictions for today (date 't')
         for ticker in test_dfs_dict.keys():
             df_test = test_dfs_dict[ticker]
             if t in df_test.index:
-                # Feature vector for ticker on date 't'
                 X_today = df_test.loc[[t], feature_columns]
                 
-                # Predict signal
-                sig, probs = ensemble.predict_signals(X_today)
+                # Predict signal using the corresponding sector ensemble
+                if ticker in config.SHORTABLE_TICKERS:
+                    sig, probs = crypto_ensemble.predict_signals(X_today)
+                else:
+                    sig, probs = equity_ensemble.predict_signals(X_today)
                 
-                # Store signal in signals array (find row index of date 't' in test set)
                 row_idx = df_test.index.get_loc(t)
                 test_signals_dict[ticker][row_idx] = sig[0]
                 test_probs_dict[ticker][row_idx] = probs[0]
