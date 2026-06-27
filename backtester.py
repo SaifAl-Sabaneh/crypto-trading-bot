@@ -33,7 +33,7 @@ class PortfolioBacktester:
         self.circuit_breaker_tripped = False
         self.circuit_breaker_date = None
 
-    def run(self, test_dfs, test_signals_dict, test_allowance_dict, test_probs_dict=None):
+    def run(self, test_dfs, test_signals_dict, test_allowance_dict, test_probs_dict=None, rl_agent=None):
         """
         Runs the portfolio simulation with risk filters, slippage, and circuit breaker.
         """
@@ -42,6 +42,20 @@ class PortfolioBacktester:
         self.circuit_breaker_tripped = False
         self.circuit_breaker_date = None
         
+        # Build returns DataFrame for correlation check
+        returns_df = pd.DataFrame()
+        if getattr(config, 'USE_CORRELATION_GUARD', False):
+            try:
+                returns_dict = {}
+                for ticker, df in test_dfs.items():
+                    close_prices = df['Close']
+                    if isinstance(close_prices, pd.DataFrame):
+                        close_prices = close_prices.iloc[:, 0]
+                    returns_dict[ticker] = close_prices.pct_change()
+                returns_df = pd.DataFrame(returns_dict)
+            except Exception as e:
+                logger.error(f"Failed to build returns DataFrame for Correlation Guard: {e}")
+                
         all_dates = sorted(list(set().union(*(df.index for df in test_dfs.values()))))
         
         shared_cash = self.initial_capital
@@ -117,6 +131,8 @@ class PortfolioBacktester:
                         'PnL_USD': pnl_usd,
                         'ExitReason': 'Emergency_Circuit_Breaker'
                     })
+                    if getattr(config, 'USE_RL_AGENT', False) and rl_agent is not None:
+                        rl_agent.update(pnl_pct)
                     del positions[ticker]
                 
                 # Keep cash flat for remaining bars
@@ -201,6 +217,8 @@ class PortfolioBacktester:
                             f"🔴 **[EXIT]** Closed {'Long' if is_long else 'Short'} position on **{ticker}** at {final_exit_price:.2f} due to {reason}.\n"
                             f"PnL: {pnl_pct:.2%} (${pnl_usd:.2f})"
                         )
+                    if getattr(config, 'USE_RL_AGENT', False) and rl_agent is not None:
+                        rl_agent.update(pnl_pct)
                     del positions[ticker]
                 else:
                     # Trailing & Breakeven updates
@@ -251,16 +269,90 @@ class PortfolioBacktester:
             if candidates:
                 best_cand = candidates[0]
                 ticker = best_cand['ticker']
+                
+                # A. Correlation Guard check
+                is_blocked_by_corr = False
+                if getattr(config, 'USE_CORRELATION_GUARD', False) and len(positions) > 0 and not returns_df.empty:
+                    try:
+                        idx = returns_df.index.get_loc(date)
+                        slice_df = returns_df.iloc[max(0, idx - getattr(config, 'CORRELATION_LOOKBACK', 60)):idx]
+                        corr_matrix = slice_df.corr()
+                        for open_ticker in positions.keys():
+                            if open_ticker in corr_matrix.columns and ticker in corr_matrix.index:
+                                corr_val = corr_matrix.loc[ticker, open_ticker]
+                                if corr_val > getattr(config, 'CORRELATION_GUARD_THRESHOLD', 0.75):
+                                    logger.info(f"Correlation Guard: Blocked trade on {ticker} due to high correlation ({corr_val:.2f}) with open {open_ticker} on {date.date()}.")
+                                    is_blocked_by_corr = True
+                                    break
+                    except Exception as e:
+                        logger.debug(f"Correlation check failed: {e}")
+                        
+                if is_blocked_by_corr:
+                    continue
+                    
                 df = best_cand['df']
                 scale = best_cand['scale']
                 sig = best_cand['sig']
                 date_idx = best_cand['date_idx']
                 
-                close_val = df.loc[date, 'Close']
-                atr_val = df.loc[date, 'ATR']
+                # B. RL Agent Veto layer
+                rl_confirmed = True
+                if getattr(config, 'USE_RL_AGENT', False) and rl_agent is not None:
+                    try:
+                        vix_zscore = 0.0
+                        yield_spread = 0.0
+                        if 'Macro_VIX_Zscore' in df.columns:
+                            vix_zscore = float(df.loc[date, 'Macro_VIX_Zscore'])
+                        if 'Macro_Yield_Spread' in df.columns:
+                            yield_spread = float(df.loc[date, 'Macro_Yield_Spread'])
+                            
+                        # Retrieve HMM regime label if present
+                        regime_label = 'Sideways'
+                        if 'Regime_Label' in df.columns:
+                            regime_label = df.loc[date, 'Regime_Label']
+                            
+                        rl_confirmed = rl_agent.should_take_action(
+                            signal=sig,
+                            regime=regime_label,
+                            prob=best_cand['prob'],
+                            vix_zscore=vix_zscore,
+                            yield_spread=yield_spread
+                        )
+                    except Exception as e:
+                        logger.debug(f"RL agent decision failed: {e}")
+                        
+                if not rl_confirmed:
+                    continue
                 
-                # Position sizing
-                allocation_usd = cash_at_start * self.max_alloc * scale
+                close_val = df.loc[date, 'Close']
+                if isinstance(close_val, pd.Series):
+                    close_val = close_val.iloc[0]
+                elif isinstance(close_val, pd.DataFrame):
+                    close_val = close_val.iloc[0, 0]
+                    
+                atr_val = df.loc[date, 'ATR']
+                if isinstance(atr_val, pd.Series):
+                    atr_val = atr_val.iloc[0]
+                elif isinstance(atr_val, pd.DataFrame):
+                    atr_val = atr_val.iloc[0, 0]
+                
+                # C. Position sizing (Kelly vs Fixed)
+                if getattr(config, 'USE_KELLY_SIZING', False):
+                    try:
+                        from kelly import KellySizer
+                        sizer = KellySizer(
+                            kelly_fraction=getattr(config, 'KELLY_FRACTION', 0.5),
+                            max_alloc=self.max_alloc,
+                            min_alloc=getattr(config, 'KELLY_MIN_ALLOC', 0.05)
+                        )
+                        kelly_pct = sizer.compute(best_cand['prob'], sig)
+                        allocation_usd = cash_at_start * kelly_pct * scale
+                    except Exception as e:
+                        logger.error(f"Kelly sizing failed: {e}. Using default allocation.")
+                        allocation_usd = cash_at_start * self.max_alloc * scale
+                else:
+                    allocation_usd = cash_at_start * self.max_alloc * scale
+                    
                 allocation_usd = min(shared_cash, allocation_usd)
                 
                 if allocation_usd > 0:

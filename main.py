@@ -104,7 +104,7 @@ def main():
             
             # Feature calculation & Labeling
             df_copy = df.copy()
-            feature_cols = build_features(df_copy)
+            feature_cols = build_features(df_copy, ticker=ticker)
             calculate_triple_barrier_labels(
                 df_copy, 
                 horizon=config.FORECAST_HORIZON, 
@@ -185,6 +185,19 @@ def main():
         conf_thresh_short=config.CONFIDENCE_THRESHOLD_SHORT
     )
     
+    rl_agent = None
+    if getattr(config, 'USE_RL_AGENT', False):
+        try:
+            from rl_agent import QLearningAgent
+            rl_agent = QLearningAgent(
+                learning_rate=getattr(config, 'RL_LEARNING_RATE', 0.1),
+                discount_factor=getattr(config, 'RL_DISCOUNT_FACTOR', 0.95),
+                epsilon=getattr(config, 'RL_EPSILON', 0.05)
+            )
+            logger.info("QLearning RL Agent initialized successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize RL Agent: {e}")
+    
     # 2.5 Tune Hyperparameters on initial pooled training set if enabled
     if config.RUN_HYPERPARAMETER_TUNING and len(test_dates) > 0:
         logger.info("Preparing initial training data for hyperparameter auto-tuning...")
@@ -234,8 +247,8 @@ def main():
                     train_features_equity.append(historical_data[feature_columns])
                     train_targets_equity.append(historical_data['Target'])
                     
-        # Retrain primary ensembles and secondary meta-labelers weekly
-        if i % 7 == 0 or i == 0 or i == len(test_dates) - 1:
+        # Retrain primary ensembles and secondary meta-labelers monthly
+        if i % 30 == 0 or i == 0 or i == len(test_dates) - 1:
             if train_features_crypto:
                 X_train_c = pd.concat(train_features_crypto, axis=0)
                 y_train_c = pd.concat(train_targets_crypto, axis=0)
@@ -251,15 +264,16 @@ def main():
         for ticker in test_dfs_dict.keys():
             df_test = test_dfs_dict[ticker]
             if t in df_test.index:
+                row_idx = df_test.index.get_loc(t)
                 X_today = df_test.loc[[t], feature_columns]
+                history = df_test.iloc[max(0, row_idx - getattr(config, 'LSTM_SEQUENCE_LENGTH', 20) + 1):row_idx + 1]
                 
                 # Predict signal using the corresponding sector ensemble
                 if ticker in config.SHORTABLE_TICKERS:
-                    sig, probs = crypto_ensemble.predict_signals(X_today)
+                    sig, probs = crypto_ensemble.predict_signals(X_today, history=history)
                 else:
-                    sig, probs = equity_ensemble.predict_signals(X_today)
+                    sig, probs = equity_ensemble.predict_signals(X_today, history=history)
                 
-                row_idx = df_test.index.get_loc(t)
                 test_signals_dict[ticker][row_idx] = sig[0]
                 test_probs_dict[ticker][row_idx] = probs[0]
                 
@@ -297,7 +311,7 @@ def main():
     # 4. Layer 3: Run Portfolio Backtester with Slippage & Circuit Breaker
     logger.info("Initializing multi-asset portfolio backtest...")
     backtester = PortfolioBacktester()
-    equity_series, trade_log = backtester.run(test_dfs_dict, test_signals_dict, test_allowance_dict, test_probs_dict)
+    equity_series, trade_log = backtester.run(test_dfs_dict, test_signals_dict, test_allowance_dict, test_probs_dict, rl_agent=rl_agent)
     
     # Analyze portfolio metrics
     metrics = backtester.analyze_performance(equity_series, trade_log, test_dfs_dict)

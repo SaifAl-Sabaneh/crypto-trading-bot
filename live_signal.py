@@ -47,7 +47,7 @@ def main():
                 df.columns = df.columns.get_level_values(0)
                 
             # Build indicators
-            feature_columns = build_features(df)
+            feature_columns = build_features(df, ticker=ticker)
             
             # Drop NaN rows to get clean features
             df_clean = df.dropna(subset=feature_columns + ['SMA_200']).copy()
@@ -60,11 +60,14 @@ def main():
             latest_date = df_clean.index[-1].strftime("%Y-%m-%d")
             latest_close = float(df_clean.iloc[-1]['Close'])
             
+            # Extract sequence history for the NumPy LSTM layer
+            history = df_clean.iloc[-getattr(config, 'LSTM_SEQUENCE_LENGTH', 20):]
+            
             # Run dynamic feature selection and predict
             if ticker in config.SHORTABLE_TICKERS:
-                sig, probs = crypto_ensemble.predict_signals(X_today)
+                sig, probs = crypto_ensemble.predict_signals(X_today, history=history)
             else:
-                sig, probs = equity_ensemble.predict_signals(X_today)
+                sig, probs = equity_ensemble.predict_signals(X_today, history=history)
                 
             sig_val = sig[0]
             prob_val = probs[0]

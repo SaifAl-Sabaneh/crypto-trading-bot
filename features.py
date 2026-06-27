@@ -1,6 +1,11 @@
 import pandas as pd
 import numpy as np
 import config
+import urllib.request
+import xml.etree.ElementTree as ET
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
 
 def calculate_rsi(close_prices, window=14):
     """Calculates the Relative Strength Index (RSI)."""
@@ -88,7 +93,7 @@ def calculate_adx(df, window=14):
     adx = dx.rolling(window).mean()
     return adx
 
-def build_features(df):
+def build_features(df, ticker=None):
     """
     Calculates features for ML model.
     Modifies df in place and returns the list of feature column names.
@@ -149,6 +154,68 @@ def build_features(df):
             df['Sentiment_MA7'] = 50.0
         feature_cols.extend(['Sentiment_Score', 'Sentiment_MA7'])
         
+    # Merge Macro Features
+    if getattr(config, 'USE_MACRO_FEATURES', False):
+        try:
+            from macro import fetch_macro_features
+            start_str = df.index[0].strftime("%Y-%m-%d")
+            end_str = df.index[-1].strftime("%Y-%m-%d")
+            macro_df = fetch_macro_features(start_str, end_str)
+            macro_cols = [
+                'Macro_DXY_Return', 'Macro_DXY_Trend', 'Macro_VIX', 
+                'Macro_VIX_Zscore', 'Macro_Yield_Spread', 
+                'Macro_Yield_Inverted', 'Macro_RiskOff_Ratio'
+            ]
+            for col in macro_cols:
+                if not macro_df.empty and col in macro_df.columns:
+                    df[col] = macro_df[col].reindex(df.index).ffill().fillna(0.0)
+                else:
+                    df[col] = 0.0
+            feature_cols.extend(macro_cols)
+        except Exception as e:
+            from security import logger
+            logger.error(f"Error merging macro features: {e}")
+            
+    # Merge On-Chain Features (for Crypto tickers only)
+    if getattr(config, 'USE_ONCHAIN_FEATURES', False):
+        onchain_cols = ['OnChain_NVT_Zscore', 'OnChain_ActiveAddr_Change', 'OnChain_ExchangeFlow']
+        if ticker in getattr(config, 'CRYPTO_TICKERS', []):
+            try:
+                from onchain import fetch_onchain_features
+                start_str = df.index[0].strftime("%Y-%m-%d")
+                end_str = df.index[-1].strftime("%Y-%m-%d")
+                onchain_df = fetch_onchain_features(ticker, start_str, end_str)
+                for col in onchain_cols:
+                    if not onchain_df.empty and col in onchain_df.columns:
+                        df[col] = onchain_df[col].reindex(df.index).ffill().fillna(0.0)
+                    else:
+                        df[col] = 0.0
+            except Exception as e:
+                from security import logger
+                logger.error(f"Error merging on-chain features for {ticker}: {e}")
+                for col in onchain_cols:
+                    df[col] = 0.0
+        else:
+            # Non-crypto/equity ticker: populate with neutral zeros to maintain feature symmetry
+            for col in onchain_cols:
+                df[col] = 0.0
+        feature_cols.extend(onchain_cols)
+            
+    # Merge News NLP Sentiment Features
+    if getattr(config, 'USE_NEWS_NLP', False) and ticker:
+        try:
+            start_str = df.index[0].strftime("%Y-%m-%d")
+            end_str = df.index[-1].strftime("%Y-%m-%d")
+            df_news = fetch_rss_news_sentiment(ticker, start_str, end_str)
+            if not df_news.empty and 'News_Sentiment_MA3' in df_news.columns:
+                df['News_Sentiment_MA3'] = df_news['News_Sentiment_MA3'].reindex(df.index).ffill().fillna(50.0)
+            else:
+                df['News_Sentiment_MA3'] = 50.0
+            feature_cols.append('News_Sentiment_MA3')
+        except Exception as e:
+            from security import logger
+            logger.error(f"Error merging news NLP features for {ticker}: {e}")
+            
     return feature_cols
 
 def fetch_fear_and_greed_data(limit=0):
@@ -282,5 +349,95 @@ def align_multi_timeframe_indicators(df_daily, df_4h):
     df_daily_naive['4h_Bullish'] = df_daily_naive['4h_Bullish'].fillna(1.0)
     
     return df_daily_naive
+
+# Initialize VADER sentiment analyzer
+try:
+    nltk.data.find('sentiment/vader_lexicon.zip')
+except LookupError:
+    nltk.download('vader_lexicon', quiet=True)
+
+_vader_analyzer = None
+
+def get_vader_analyzer():
+    global _vader_analyzer
+    if _vader_analyzer is None:
+        _vader_analyzer = SentimentIntensityAnalyzer()
+    return _vader_analyzer
+
+def fetch_rss_news_sentiment(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Scrapes free financial RSS feeds (Yahoo Finance/CoinDesk),
+    applies VADER NLP sentiment analysis, and returns a DataFrame
+    with daily Sentiment score for the ticker.
+    """
+    from security import logger
+    logger.info(f"Fetching RSS news sentiment for {ticker}...")
+    
+    # We create a dummy index over the date range
+    date_idx = pd.date_range(start_date, end_date)
+    result = pd.DataFrame(index=date_idx)
+    result['News_Sentiment_Score'] = 0.0  # Neutral default
+    
+    analyzer = get_vader_analyzer()
+    
+    # Standardize asset terms to search
+    search_term = ticker.split('-')[0].lower() # e.g. btc-usd -> btc
+    
+    headlines_by_date = {} # {date_str: [headlines]}
+    
+    # Format Yahoo Finance RSS URL for specific ticker
+    url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
+    # Also fetch standard CoinDesk feed if it's crypto
+    urls = [url]
+    if ticker in config.CRYPTO_TICKERS:
+        urls.append("https://coindesk.com/arc/outboundfeeds/rss/")
+        
+    for rss_url in urls:
+        try:
+            req = urllib.request.Request(rss_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                xml_data = response.read()
+                root = ET.fromstring(xml_data)
+                
+                for item in root.findall('.//item'):
+                    title = item.find('title')
+                    pub_date = item.find('pubDate')
+                    
+                    if title is not None and title.text and pub_date is not None:
+                        headline = title.text.strip()
+                        # Simple case-insensitive match for the asset in the headline
+                        if search_term in headline.lower():
+                            try:
+                                dt = pd.to_datetime(pub_date.text).tz_localize(None).normalize()
+                                dt_str = dt.strftime("%Y-%m-%d")
+                                if dt_str not in headlines_by_date:
+                                    headlines_by_date[dt_str] = []
+                                headlines_by_date[dt_str].append(headline)
+                            except Exception:
+                                continue
+        except Exception as e:
+            logger.debug(f"RSS fetch failed for {rss_url}: {e}")
+            
+    # Compute daily scores
+    for date_str, headlines in headlines_by_date.items():
+        if date_str in result.index.strftime("%Y-%m-%d"):
+            scores = []
+            for h in headlines:
+                vader_score = analyzer.polarity_scores(h)['compound']
+                scores.append(vader_score)
+            
+            # Map VADER compound score [-1.0, 1.0] to a [0, 100] scale
+            mean_vader = np.mean(scores) if scores else 0.0
+            sentiment_scaled = (mean_vader + 1.0) * 50.0
+            dt_index = pd.to_datetime(date_str)
+            result.loc[dt_index, 'News_Sentiment_Score'] = sentiment_scaled
+            
+    # Compute rolling average of news sentiment to smooth noise and handle missing days
+    result['News_Sentiment_Score'] = result['News_Sentiment_Score'].replace(0.0, np.nan)
+    result['News_Sentiment_Score'] = result['News_Sentiment_Score'].ffill().fillna(50.0)
+    result['News_Sentiment_MA3'] = result['News_Sentiment_Score'].rolling(config.NEWS_SENTIMENT_WINDOW, min_periods=1).mean()
+    
+    return result[['News_Sentiment_MA3']]
+
 
 

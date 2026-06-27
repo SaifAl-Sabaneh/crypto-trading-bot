@@ -32,7 +32,7 @@ def main():
                 df.columns = df.columns.get_level_values(0)
                 
             # Calculate features
-            feature_cols = build_features(df)
+            feature_cols = build_features(df, ticker=ticker)
             
             # Compute Triple Barrier Method labels (Targets)
             df['Target'] = calculate_triple_barrier_labels(

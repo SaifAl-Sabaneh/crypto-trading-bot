@@ -12,6 +12,7 @@ IS_SANDBOX = True              # Safe mode: True for mock paper-trading, False f
 # ----------------- DATA SETTINGS -----------------
 TICKERS = ["COIN", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "GLD", "SLV", "TSLA", "AAPL", "MSFT", "NVDA", "AMZN", "META", "SPY", "QQQ"] # Expanded multi-sector asset universe
 SHORTABLE_TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "COIN", "TSLA"] # Tickers allowed for short-selling (high volatility growth/crypto)
+CRYPTO_TICKERS    = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "COIN"]         # Crypto assets eligible for on-chain features
 START_DATE = "2023-01-01"      # Historical data start date
 END_DATE = "2026-06-25"        # Historical data end date
 INTERVAL = "1d"                # Timeframe interval (e.g., '1d')
@@ -57,6 +58,50 @@ WEEKLY_DRAWDOWN_LIMIT = 0.10   # 10% weekly drawdown limit (adjusted to 10% to p
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# ----------------- INTELLIGENCE UPGRADES -----------------
+
+# HMM Regime Classifier
+USE_HMM_REGIME = True          # Use 4-state HMM regime classifier instead of simple vol percentile filter
+HMM_N_STATES = 4               # Number of hidden market states: Bull, Bear, Sideways, Crisis
+HMM_LOOKBACK = 60              # Minimum bars needed to fit HMM
+
+# Kelly Criterion Dynamic Sizing
+USE_KELLY_SIZING = True        # Use Kelly Criterion for dynamic position sizing
+KELLY_FRACTION = 0.5           # Half-Kelly for safety (full Kelly is too aggressive)
+KELLY_MAX_ALLOC = MAX_ALLOCATION_PER_TRADE  # Cap Kelly sizing at max allocation
+KELLY_MIN_ALLOC = 0.05         # Minimum allocation floor (5%) if signal fires
+
+# Correlation Guard
+USE_CORRELATION_GUARD = True   # Block new positions if a correlated position is already open
+CORRELATION_GUARD_THRESHOLD = 0.75  # Correlation threshold above which new trades are blocked
+CORRELATION_LOOKBACK = 60     # Rolling window (days) for computing asset correlations
+
+# Macro Features (via free yfinance)
+USE_MACRO_FEATURES = True      # Add DXY, VIX, yield curve features to ensemble inputs
+
+# On-Chain Crypto Data (via free CoinMetrics community API)
+USE_ONCHAIN_FEATURES = True    # Add NVT, active address, exchange flow features for crypto assets
+
+# News NLP Sentiment (via free RSS feeds)
+USE_NEWS_NLP = True            # Add NLP sentiment score from financial RSS feeds
+NEWS_RSS_FEEDS = [             # Free RSS feeds for financial news
+    "https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US",
+    "https://coindesk.com/arc/outboundfeeds/rss/"
+]
+NEWS_SENTIMENT_WINDOW = 3     # Rolling window (days) for news sentiment averaging
+
+# LSTM Temporal Layer
+USE_LSTM_LAYER = True          # Add lightweight NumPy LSTM as additional stacking feature
+LSTM_SEQUENCE_LENGTH = 20      # Number of past bars fed into LSTM as context window
+LSTM_HIDDEN_SIZE = 32          # Number of hidden units in LSTM cell
+
+# RL Agent
+USE_RL_AGENT = True            # Use Q-Learning RL agent as veto/confirmation layer
+RL_LEARNING_RATE = 0.1         # Q-table update learning rate
+RL_DISCOUNT_FACTOR = 0.95      # Future reward discount factor
+RL_EPSILON = 0.05              # Exploration rate (5% random confirmation)
+
 
 # ----------------- SYSTEM LOGGING -----------------
 LOG_FILE_PATH = "trading_bot.log"

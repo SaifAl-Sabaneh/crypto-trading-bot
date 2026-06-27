@@ -30,6 +30,34 @@ class MarketRegimeFilter:
                             - 0.5: Moderate Volatility (Half Allocation)
                             - 0.0: Hyper-Volatile / Bear (Halt Trading)
         """
+        if getattr(config, 'USE_HMM_REGIME', False):
+            try:
+                from hmm_regime import HMMRegimeClassifier
+                classifier = HMMRegimeClassifier(
+                    n_states=getattr(config, 'HMM_N_STATES', 4),
+                    lookback=getattr(config, 'HMM_LOOKBACK', 60)
+                )
+                classifier.fit(df)
+                regimes = classifier.predict_regime(df)
+                
+                # Compute position scales from regimes
+                position_scale = regimes.apply(classifier.get_position_scale)
+                
+                # Diagnostic columns
+                df['Regime_Label'] = regimes
+                df['Regime_Scale'] = position_scale
+                
+                # Also set default Regime_Position_Scale to make sure main.py and reports work
+                df['Regime_Position_Scale'] = position_scale
+                
+                return position_scale
+            except Exception as e:
+                logger.error(f"HMM Regime fit/predict failed: {e}. Falling back to Volatility Percentile.")
+                
+        # Fill default columns if HMM not used to prevent KeyError in reporting
+        df['Regime_Label'] = 'Bull'
+        df['Regime_Scale'] = 1.0
+        
         vol = self.calculate_volatility_metric(df)
         
         # Calculate two thresholds:
@@ -74,5 +102,6 @@ class MarketRegimeFilter:
         df['Regime_Calm_Threshold'] = calm_thresholds
         df['Regime_Halt_Threshold'] = halt_thresholds
         df['Regime_Position_Scale'] = position_scale
+        df['Regime_Scale'] = position_scale
         
         return position_scale

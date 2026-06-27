@@ -71,6 +71,19 @@ class EnsembleTradingModel:
         self.meta_model_trained = False
         self.active_features = None
         self.active_features_pruned = False
+        
+        # LSTM Temporal Layer
+        self.lstm_layer = None
+        if getattr(config, 'USE_LSTM_LAYER', False):
+            try:
+                from lstm_model import TemporalLSTMLayer
+                self.lstm_layer = TemporalLSTMLayer(
+                    seq_length=getattr(config, 'LSTM_SEQUENCE_LENGTH', 20),
+                    hidden_size=getattr(config, 'LSTM_HIDDEN_SIZE', 32)
+                )
+                logger.info("LSTM Temporal Layer initialized successfully in the Ensemble.")
+            except Exception as e:
+                logger.error(f"Failed to initialize LSTM Temporal Layer: {e}")
 
     def prune_features(self, X, y):
         """
@@ -126,8 +139,25 @@ class EnsembleTradingModel:
             self.active_features = self.prune_features(X_clean, y_clean)
             self.active_features_pruned = True
             
-        X_clean_pruned = X_clean[self.active_features]
+        # Slice X_clean using self.active_features excluding LSTM_Score
+        features_to_slice = [f for f in self.active_features if f != 'LSTM_Score']
+        X_clean_pruned = X_clean[features_to_slice].copy()
         
+        # Train LSTM layer if enabled, and append LSTM_Score to features
+        if self.lstm_layer is not None:
+            try:
+                # Fit the LSTM on the raw pruned features
+                self.lstm_layer.fit(X_clean_pruned.values, y_clean)
+                # Compute out-of-fold/in-sample scores
+                lstm_scores = self.lstm_layer.predict_scores(X_clean_pruned.values)
+                # Append LSTM_Score to self.active_features to ensure standard model fits see it
+                X_clean_pruned = X_clean_pruned.copy()
+                X_clean_pruned['LSTM_Score'] = lstm_scores
+                if 'LSTM_Score' not in self.active_features:
+                    self.active_features.append('LSTM_Score')
+            except Exception as e:
+                logger.error(f"Failed to fit LSTM layer: {e}")
+                
         # Ensure classifiers are calibrated
         if not isinstance(self.rf_model, CalibratedClassifierCV):
             self.rf_model = CalibratedClassifierCV(estimator=self.rf_model, method='sigmoid', cv=3)
@@ -175,10 +205,19 @@ class EnsembleTradingModel:
             
         # Filter features using self.active_features if pruned
         if self.active_features_pruned:
-            X_clean_pruned = X_clean[self.active_features]
+            features_to_slice = [f for f in self.active_features if f != 'LSTM_Score']
+            X_clean_pruned = X_clean[features_to_slice].copy()
         else:
-            X_clean_pruned = X_clean
+            X_clean_pruned = X_clean.copy()
             
+        # Re-generate LSTM_Score if LSTM layer is used
+        if self.lstm_layer is not None and 'LSTM_Score' not in X_clean_pruned.columns:
+            try:
+                lstm_scores = self.lstm_layer.predict_scores(X_clean_pruned.values)
+                X_clean_pruned['LSTM_Score'] = lstm_scores
+            except Exception as e:
+                logger.error(f"Failed to generate LSTM_Score in fit_meta_model: {e}")
+                
         # Generate primary model signal probabilities out-of-fold
         oof_probs = np.zeros(len(X_clean))
         kf = KFold(n_splits=3, shuffle=False)
@@ -226,7 +265,7 @@ class EnsembleTradingModel:
             self.meta_model_trained = True
             logger.info(f"Meta-labeling model trained successfully on {len(y_meta)} historical trades.")
 
-    def predict_signals(self, X):
+    def predict_signals(self, X, history=None):
         """
         Generates directional signals by averaging predictions across all ensemble models.
         Applies De Prado's meta-model checks to filter out high-probability losses.
@@ -235,9 +274,22 @@ class EnsembleTradingModel:
             raise ValueError("Model is not trained yet. Call fit() first.")
             
         if self.active_features_pruned:
-            X_pruned = X[self.active_features]
+            features_to_slice = [f for f in self.active_features if f != 'LSTM_Score']
+            X_pruned = X[features_to_slice].copy()
         else:
-            X_pruned = X
+            X_pruned = X.copy()
+            
+        # Append LSTM_Score if LSTM layer is used
+        if self.lstm_layer is not None:
+            lstm_val = 0.5  # Neutral default
+            if history is not None and len(history) >= self.lstm_layer.seq_length:
+                try:
+                    # Predict score for the last sequence window in history
+                    seq_features = history[features_to_slice].values[-self.lstm_layer.seq_length:]
+                    lstm_val = self.lstm_layer.lstm.predict_proba(seq_features)
+                except Exception as e:
+                    logger.debug(f"Failed to predict LSTM score: {e}")
+            X_pruned['LSTM_Score'] = lstm_val
             
         p_rf = self.rf_model.predict_proba(X_pruned)[:, 1]
         p_gb = self.gb_model.predict_proba(X_pruned)[:, 1]
@@ -451,4 +503,64 @@ class EnsembleTradingModel:
         self.active_features = state['active_features']
         self.active_features_pruned = state['active_features_pruned']
         logger.info(f"Successfully loaded ensemble model from {filepath}")
+
+    def detect_concept_drift(self, y_pred, y_true, window=30, threshold=0.15):
+        """
+        Monitors model accuracy on a rolling window.
+        Returns True if accuracy falls significantly below historical levels.
+        """
+        if len(y_pred) < window:
+            return False
+        recent_pred = np.array(y_pred[-window:])
+        recent_true = np.array(y_true[-window:])
+        acc = np.mean(recent_pred == recent_true)
+        
+        hist_pred = np.array(y_pred[:-window])
+        hist_true = np.array(y_true[:-window])
+        if len(hist_true) < window:
+            return False
+        hist_acc = np.mean(hist_pred == hist_true)
+        
+        drift = (hist_acc - acc) > threshold
+        if drift:
+            logger.warning(f"Concept Drift Detected! Accuracy fell from {hist_acc:.2%} to {acc:.2%}. Triggering incremental update.")
+        return drift
+
+    def incremental_update(self, X_recent, y_recent):
+        """Updates the models incrementally on the most recent data window."""
+        if len(y_recent) < 20:
+            return
+        valid_idx = X_recent.notna().all(axis=1) & y_recent.notna()
+        X_clean = X_recent[valid_idx]
+        y_clean = y_recent[valid_idx]
+        
+        if len(y_clean) == 0:
+            return
+            
+        if self.active_features_pruned:
+            features_to_slice = [f for f in self.active_features if f != 'LSTM_Score']
+            X_pruned = X_clean[features_to_slice].copy()
+        else:
+            X_pruned = X_clean.copy()
+            
+        # LSTM incremental update
+        if self.lstm_layer is not None:
+            try:
+                self.lstm_layer.fit(X_pruned.values, y_clean)
+                lstm_scores = self.lstm_layer.predict_scores(X_pruned.values)
+                X_pruned['LSTM_Score'] = lstm_scores
+            except Exception as e:
+                logger.debug(f"LSTM incremental fit failed: {e}")
+                
+        # Retrain primary models on the recent window to adjust weights
+        try:
+            self.rf_model.fit(X_pruned, y_clean)
+            self.gb_model.fit(X_pruned, y_clean)
+            self.lr_model.fit(X_pruned, y_clean)
+            if self.cb_available:
+                self.cb_model.fit(X_pruned, y_clean)
+            logger.info(f"Incremental Online Update completed on {len(y_clean)} recent bars.")
+        except Exception as e:
+            logger.error(f"Incremental update failed: {e}")
+
 
