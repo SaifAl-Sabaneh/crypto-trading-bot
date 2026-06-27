@@ -260,7 +260,7 @@ def main():
                     else:
                         trend_ok = (mt_bullish_val == 0.0)
                     sent_ok = df_test.loc[t, 'Short_Sentiment']
-                    allowed = regime_val if (trend_ok and sent_ok) else 0.0
+                    allowed = 1.0 if (trend_ok and sent_ok) else 0.0
                 else:
                     allowed = 0.0
                     

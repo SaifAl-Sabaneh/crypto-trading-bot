@@ -291,7 +291,7 @@ class PortfolioBacktester:
                             'entry_price': entry_price,
                             'entry_time': date,
                             'direction': 'short',
-                            'sl': entry_price + (self.sl_mult * sl_factor * atr_val),
+                            'sl': entry_price + (1.5 * sl_factor * atr_val), # Widened short SL to 1.5x ATR to prevent short squeeze noise
                             'tp': entry_price - (self.tp_mult * tp_factor * atr_val),
                             'entry_atr': atr_val,
                             'breakeven': False
