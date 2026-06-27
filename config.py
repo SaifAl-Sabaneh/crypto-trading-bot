@@ -10,8 +10,8 @@ SECRET_KEY = os.getenv("EXCHANGE_SECRET_KEY", "")
 IS_SANDBOX = True              # Safe mode: True for mock paper-trading, False for live money
 
 # ----------------- DATA SETTINGS -----------------
-TICKERS = ["COIN", "BTC-USD", "ETH-USD", "GLD", "SLV", "TSLA", "AAPL", "MSFT", "NVDA", "SPY", "QQQ"] # Expanded multi-sector asset universe
-SHORTABLE_TICKERS = ["BTC-USD", "ETH-USD", "COIN", "TSLA"] # Tickers allowed for short-selling (high volatility growth/crypto)
+TICKERS = ["COIN", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "GLD", "SLV", "TSLA", "AAPL", "MSFT", "NVDA", "AMZN", "META", "SPY", "QQQ"] # Expanded multi-sector asset universe
+SHORTABLE_TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "COIN", "TSLA"] # Tickers allowed for short-selling (high volatility growth/crypto)
 START_DATE = "2023-01-01"      # Historical data start date
 END_DATE = "2026-06-25"        # Historical data end date
 INTERVAL = "1d"                # Timeframe interval (e.g., '1d')
@@ -47,7 +47,7 @@ SL_ATR_MULT_SHORT = 1.2        # Stop-Loss multiplier for short positions (optim
 ENABLE_BREAKEVEN = True        # Move SL to Entry once price moves 0.8 * ATR in our favor (tightened)
 
 INITIAL_CAPITAL = 10000.0      # Starting backtest capital in USD
-MAX_ALLOCATION_PER_TRADE = 0.60# Max portfolio allocation per trade (scaled to 60% to target 70%+ return range)
+MAX_ALLOCATION_PER_TRADE = 0.44# Max portfolio allocation per trade (quality-focused 44% for high win rate and Sharpe)
 
 # ----------------- REAL-WORLD RISK PROTECTIONS -----------------
 SLIPPAGE_PENALTY_PCT = 0.0015  # 0.15% slippage/fee penalty applied to every trade exit
