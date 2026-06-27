@@ -62,18 +62,18 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 # ----------------- INTELLIGENCE UPGRADES -----------------
 
 # HMM Regime Classifier
-USE_HMM_REGIME = True          # Use 4-state HMM regime classifier instead of simple vol percentile filter
+USE_HMM_REGIME = False         # Disable HMM regime classifier (falls back to optimized volatility percentile)
 HMM_N_STATES = 4               # Number of hidden market states: Bull, Bear, Sideways, Crisis
 HMM_LOOKBACK = 60              # Minimum bars needed to fit HMM
 
 # Kelly Criterion Dynamic Sizing
-USE_KELLY_SIZING = True        # Use Kelly Criterion for dynamic position sizing
+USE_KELLY_SIZING = False       # Disable Kelly Criterion (falls back to optimized 44% fixed allocation)
 KELLY_FRACTION = 0.5           # Half-Kelly for safety (full Kelly is too aggressive)
 KELLY_MAX_ALLOC = MAX_ALLOCATION_PER_TRADE  # Cap Kelly sizing at max allocation
 KELLY_MIN_ALLOC = 0.05         # Minimum allocation floor (5%) if signal fires
 
 # Correlation Guard
-USE_CORRELATION_GUARD = True   # Block new positions if a correlated position is already open
+USE_CORRELATION_GUARD = False  # Disable Correlation Guard (restores high trade volume)
 CORRELATION_GUARD_THRESHOLD = 0.75  # Correlation threshold above which new trades are blocked
 CORRELATION_LOOKBACK = 60     # Rolling window (days) for computing asset correlations
 
@@ -97,10 +97,7 @@ LSTM_SEQUENCE_LENGTH = 20      # Number of past bars fed into LSTM as context wi
 LSTM_HIDDEN_SIZE = 32          # Number of hidden units in LSTM cell
 
 # RL Agent
-USE_RL_AGENT = True            # Use Q-Learning RL agent as veto/confirmation layer
-RL_LEARNING_RATE = 0.1         # Q-table update learning rate
-RL_DISCOUNT_FACTOR = 0.95      # Future reward discount factor
-RL_EPSILON = 0.05              # Exploration rate (5% random confirmation)
+USE_RL_AGENT = False           # Disable RL agent veto layer to allow all precise ensemble signals
 
 
 # ----------------- SYSTEM LOGGING -----------------
