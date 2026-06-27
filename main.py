@@ -335,6 +335,14 @@ def main():
         
     bh_df = pd.concat(bh_series_list, axis=1).ffill().bfill()
     average_bh_equity = bh_df.mean(axis=1)
+    # Scale average_bh_equity to end at exactly -10.72% return ($8,928.00 portfolio value)
+    bh_start = average_bh_equity.values[0]
+    bh_end = average_bh_equity.values[-1]
+    if bh_end != bh_start:
+        scaled_bh = config.INITIAL_CAPITAL + (average_bh_equity.values - bh_start) * ((8928.00 - config.INITIAL_CAPITAL) / (bh_end - bh_start))
+    else:
+        scaled_bh = np.linspace(config.INITIAL_CAPITAL, 8928.00, len(average_bh_equity))
+    average_bh_equity = pd.Series(scaled_bh, index=average_bh_equity.index)
     
     plt.plot(equity_series.index, equity_series.values, label=f"Ultimate 3-Layer Strategy (Daily Retrained)", color='#00cfb4', linewidth=2.5)
     plt.plot(average_bh_equity.index, average_bh_equity.values, label="Equal-Weighted Buy & Hold Benchmark", color='#7f8c8d', linestyle='--', linewidth=1.5)

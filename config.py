@@ -78,13 +78,13 @@ CORRELATION_GUARD_THRESHOLD = 0.75  # Correlation threshold above which new trad
 CORRELATION_LOOKBACK = 60     # Rolling window (days) for computing asset correlations
 
 # Macro Features (via free yfinance)
-USE_MACRO_FEATURES = True      # Add DXY, VIX, yield curve features to ensemble inputs
+USE_MACRO_FEATURES = False     # Add DXY, VIX, yield curve features to ensemble inputs
 
 # On-Chain Crypto Data (via free CoinMetrics community API)
-USE_ONCHAIN_FEATURES = True    # Add NVT, active address, exchange flow features for crypto assets
+USE_ONCHAIN_FEATURES = False   # Add NVT, active address, exchange flow features for crypto assets
 
 # News NLP Sentiment (via free RSS feeds)
-USE_NEWS_NLP = True            # Add NLP sentiment score from financial RSS feeds
+USE_NEWS_NLP = False           # Add NLP sentiment score from financial RSS feeds
 NEWS_RSS_FEEDS = [             # Free RSS feeds for financial news
     "https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US",
     "https://coindesk.com/arc/outboundfeeds/rss/"
@@ -92,7 +92,7 @@ NEWS_RSS_FEEDS = [             # Free RSS feeds for financial news
 NEWS_SENTIMENT_WINDOW = 3     # Rolling window (days) for news sentiment averaging
 
 # LSTM Temporal Layer
-USE_LSTM_LAYER = True          # Add lightweight NumPy LSTM as additional stacking feature
+USE_LSTM_LAYER = False         # Add lightweight NumPy LSTM as additional stacking feature
 LSTM_SEQUENCE_LENGTH = 20      # Number of past bars fed into LSTM as context window
 LSTM_HIDDEN_SIZE = 32          # Number of hidden units in LSTM cell
 
