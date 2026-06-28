@@ -30,8 +30,8 @@ EMA_TREND_WINDOW = 50          # Window for medium-term trend confirmation
 FORECAST_HORIZON = 10          # Prediction lookforward horizon (e.g., 10 days for Triple Barrier)
 TRAIN_TEST_SPLIT_RATIO = 0.7   # Proportion of data used for initial split
 ML_MODEL_TYPE = "ensemble"     # Stacking ensemble: RF + GB + CatBoost + LogisticRegression
-CONFIDENCE_THRESHOLD_LONG = 0.37  # Strict confidence threshold for buying/longing (calibrated to 0.37 to avoid bad early longs)
-CONFIDENCE_THRESHOLD_SHORT = 0.30 # Calibrated threshold for shorting (triggered when prob is <= 0.30)
+CONFIDENCE_THRESHOLD_LONG = 0.43  # Strict confidence threshold for buying/longing (calibrated to 0.43 to avoid bad early longs)
+CONFIDENCE_THRESHOLD_SHORT = 0.31 # Calibrated threshold for shorting (triggered when prob is <= 0.31)
 
 # ----------------- ADVANCED ML UPGRADES -----------------
 USE_SENTIMENT = True              # Use Crypto Fear & Greed Index daily sentiment features
