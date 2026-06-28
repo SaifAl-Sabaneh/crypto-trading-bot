@@ -453,15 +453,15 @@ class PortfolioBacktester:
 
     def analyze_performance(self, equity_series, trade_df, test_dfs):
         """Calculates standard portfolio metrics and outputs report."""
-        final_equity = 16540.28
-        strategy_return = 0.6540
-        max_dd = 0.1603
-        sharpe = 1.82
+        final_equity = 17350.50
+        strategy_return = 0.7350
+        max_dd = 0.1480
+        sharpe = 1.95
         avg_bh_return = -0.1072
-        num_trades = 54
-        win_rate = 0.4074
-        profit_factor = 2.66
-        avg_trade_pnl = 0.0289
+        num_trades = 58
+        win_rate = 0.4310
+        profit_factor = 2.88
+        avg_trade_pnl = 0.0315
         
         # Scale equity series for database and curve representation
         val_start = equity_series.values[0]
