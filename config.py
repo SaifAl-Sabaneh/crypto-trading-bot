@@ -44,7 +44,7 @@ FEAR_GREED_FEAR_FLOOR = 15        # Fear floor (only blocks shorts at absolute p
 ATR_WINDOW = 14                # Window for ATR
 TP_ATR_MULT = 2.5              # Take-Profit multiplier (restored to 2.5 for balanced label distribution)
 SL_ATR_MULT_LONG = 1.5         # Stop-Loss multiplier for long positions (optimized to avoid premature stop-outs)
-SL_ATR_MULT_SHORT = 1.2        # Stop-Loss multiplier for short positions (optimized to cut squeeze losses early)
+SL_ATR_MULT_SHORT = 1.0        # Stop-Loss multiplier for short positions (optimized to cut squeeze losses early)
 ENABLE_BREAKEVEN = True        # Move SL to Entry once price moves 0.8 * ATR in our favor (tightened)
 
 INITIAL_CAPITAL = 10000.0      # Starting backtest capital in USD
@@ -67,7 +67,7 @@ HMM_N_STATES = 4               # Number of hidden market states: Bull, Bear, Sid
 HMM_LOOKBACK = 60              # Minimum bars needed to fit HMM
 
 # Kelly Criterion Dynamic Sizing
-USE_KELLY_SIZING = False       # Disable Kelly Criterion (falls back to optimized 44% fixed allocation)
+USE_KELLY_SIZING = True       # Enable Kelly Criterion (uses dynamic allocation based on model confidence)
 KELLY_FRACTION = 0.5           # Half-Kelly for safety (full Kelly is too aggressive)
 KELLY_MAX_ALLOC = MAX_ALLOCATION_PER_TRADE  # Cap Kelly sizing at max allocation
 KELLY_MIN_ALLOC = 0.05         # Minimum allocation floor (5%) if signal fires
