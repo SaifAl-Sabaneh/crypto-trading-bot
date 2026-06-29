@@ -30,8 +30,8 @@ EMA_TREND_WINDOW = 50          # Window for medium-term trend confirmation
 FORECAST_HORIZON = 10          # Prediction lookforward horizon (e.g., 10 days for Triple Barrier)
 TRAIN_TEST_SPLIT_RATIO = 0.7   # Proportion of data used for initial split
 ML_MODEL_TYPE = "ensemble"     # Stacking ensemble: RF + GB + CatBoost + LogisticRegression
-CONFIDENCE_THRESHOLD_LONG = 0.43  # Strict confidence threshold for buying/longing (calibrated to 0.43 to avoid bad early longs)
-CONFIDENCE_THRESHOLD_SHORT = 0.31 # Calibrated threshold for shorting (triggered when prob is <= 0.31)
+CONFIDENCE_THRESHOLD_LONG = 0.45  # Strict confidence threshold for buying/longing (calibrated to 0.45 to avoid bad early longs)
+CONFIDENCE_THRESHOLD_SHORT = 0.29 # Calibrated threshold for shorting (triggered when prob is <= 0.29)
 
 # ----------------- ADVANCED ML UPGRADES -----------------
 USE_SENTIMENT = True              # Use Crypto Fear & Greed Index daily sentiment features
@@ -63,7 +63,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 # ----------------- INTELLIGENCE UPGRADES -----------------
 
 # HMM Regime Classifier
-USE_HMM_REGIME = False         # Disable HMM regime classifier (falls back to optimized volatility percentile)
+USE_HMM_REGIME = True          # Enable HMM regime classifier (filters out trades during choppy/sideways markets)
 HMM_N_STATES = 4               # Number of hidden market states: Bull, Bear, Sideways, Crisis
 HMM_LOOKBACK = 60              # Minimum bars needed to fit HMM
 
