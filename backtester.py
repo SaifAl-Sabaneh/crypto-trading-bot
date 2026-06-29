@@ -452,28 +452,43 @@ class PortfolioBacktester:
         return pd.Series(self.portfolio_equity, index=all_dates), pd.DataFrame(self.trade_log)
 
     def analyze_performance(self, equity_series, trade_df, test_dfs):
-        """Calculates standard portfolio metrics and outputs report."""
-        final_equity = 24700.00
-        strategy_return = 1.4700
-        max_dd = 0.1480
-        sharpe = 2.45
-        avg_bh_return = -0.1072
-        num_trades = 64
-        win_rate = 0.4650
-        profit_factor = 3.65
-        avg_trade_pnl = 0.0650
+        """Calculates standard portfolio metrics dynamically and outputs report."""
+        final_equity = float(equity_series.iloc[-1])
+        strategy_return = float((final_equity - self.initial_capital) / self.initial_capital)
         
-        # Scale equity series for database and curve representation
-        val_start = equity_series.values[0]
-        val_end = equity_series.values[-1]
-        if val_end != val_start:
-            scaled_vals = self.initial_capital + (equity_series.values - val_start) * ((final_equity - self.initial_capital) / (val_end - val_start))
+        # Calculate Max Drawdown
+        peaks = equity_series.cummax()
+        drawdowns = (peaks - equity_series) / peaks
+        max_dd = float(drawdowns.max())
+        
+        # Calculate Sharpe Ratio (annualized)
+        daily_rets = equity_series.pct_change().dropna()
+        if len(daily_rets) > 1 and daily_rets.std() > 0:
+            sharpe = float((daily_rets.mean() / daily_rets.std()) * np.sqrt(252))
         else:
-            scaled_vals = np.linspace(self.initial_capital, final_equity, len(equity_series))
+            sharpe = 0.0
+            
+        # Calculate Buy & Hold benchmark return dynamically
+        bh_returns = []
+        for tkr, t_df in test_dfs.items():
+            if len(t_df) > 1:
+                bh_returns.append((t_df['Close'].iloc[-1] - t_df['Close'].iloc[0]) / t_df['Close'].iloc[0])
+        avg_bh_return = float(np.mean(bh_returns)) if bh_returns else 0.0
         
-        # Override the original equity series values
-        for i, idx in enumerate(equity_series.index):
-            equity_series.loc[idx] = scaled_vals[i]
+        num_trades = len(trade_df)
+        win_rate = 0.0
+        profit_factor = 0.0
+        avg_trade_pnl = 0.0
+        
+        if num_trades > 0:
+            winning_trades = trade_df[trade_df['PnL_Pct'] > 0]
+            losing_trades = trade_df[trade_df['PnL_Pct'] <= 0]
+            win_rate = float(len(winning_trades) / num_trades)
+            
+            g_prof = winning_trades['PnL_USD'].sum()
+            g_loss = abs(losing_trades['PnL_USD'].sum())
+            profit_factor = float(g_prof / g_loss) if g_loss > 0 else float('inf')
+            avg_trade_pnl = float(trade_df['PnL_Pct'].mean())
             
         # Atomic Write
         if len(trade_df) > 0:
