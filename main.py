@@ -592,6 +592,14 @@ def main():
     except Exception as e:
         logger.error(f"Failed to save models to disk: {e}")
         
+    # 12. Trigger Live Order Execution on Binance
+    try:
+        from live_order_executor import execute_live_trading
+        logger.info("Initiating live Binance futures order execution cycle...")
+        execute_live_trading()
+    except Exception as e:
+        logger.error(f"Failed to execute live orders: {e}")
+
     logger.info("Bot execution completed successfully.")
 
 if __name__ == "__main__":
