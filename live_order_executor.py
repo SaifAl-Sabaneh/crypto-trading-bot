@@ -35,7 +35,13 @@ SYMBOL_MAP = {
     'BTC-USD': 'BTC/USDT',
     'ETH-USD': 'ETH/USDT',
     'SOL-USD': 'SOL/USDT',
-    'BNB-USD': 'BNB/USDT'
+    'BNB-USD': 'BNB/USDT',
+    'AVAX-USD': 'AVAX/USDT',
+    'LINK-USD': 'LINK/USDT',
+    'ADA-USD': 'ADA/USDT',
+    'XRP-USD': 'XRP/USDT',
+    'DOT-USD': 'DOT/USDT',
+    'DOGE-USD': 'DOGE/USDT'
 }
 
 def get_exchange_connection():
@@ -271,6 +277,24 @@ def execute_live_trading():
                 is_short_triggered = (sig_val == -1 and prob_val <= config.CONFIDENCE_THRESHOLD_SHORT)
                 
                 if allow_entry and (is_long_triggered or is_short_triggered):
+                    # 1. Check Strict Trend Lock (Longs only above 200 SMA, Shorts only below 200 SMA)
+                    if getattr(config, 'STRICT_TREND_LOCK', False):
+                        sma200 = float(df_clean.iloc[-1]['SMA_200'])
+                        if is_long_triggered and latest_close < sma200:
+                            logger.info(f"Trend Lock: VETOED LONG on {symbol} — price ({latest_close:.2f}) is below 200 SMA ({sma200:.2f}).")
+                            continue
+                        if is_short_triggered and latest_close > sma200:
+                            logger.info(f"Trend Lock: VETOED SHORT on {symbol} — price ({latest_close:.2f}) is above 200 SMA ({sma200:.2f}).")
+                            continue
+                            
+                    # 2. Check Extreme Fear Block (No shorting if F&G index < 25)
+                    if getattr(config, 'EXTREME_FEAR_BLOCK', False) and is_short_triggered:
+                        fng_score = float(df_clean.iloc[-1]['Sentiment_Score'])
+                        if fng_score < getattr(config, 'FEAR_LIMIT', 25):
+                            logger.info(f"Fear Block: VETOED SHORT on {symbol} — Sentiment Index ({fng_score:.1f}) is in Extreme Fear (< {getattr(config, 'FEAR_LIMIT', 25)}).")
+                            continue
+
+                    # 3. Check RL Agent Veto
                     if rl_agent is not None:
                         confirmed = rl_agent.should_take_action(sig_val, current_regime, prob_val)
                         if not confirmed:

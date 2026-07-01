@@ -10,9 +10,9 @@ SECRET_KEY = os.getenv("EXCHANGE_SECRET_KEY", "")
 IS_SANDBOX = True              # Safe mode: True for mock paper-trading, False for live money
 
 # ----------------- DATA SETTINGS -----------------
-TICKERS = ["COIN", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "TSLA", "NVDA", "AMZN", "META"] # High-momentum growth and crypto asset universe
-SHORTABLE_TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "COIN", "TSLA", "NVDA", "AMZN", "META"] # Tickers allowed for short-selling
-CRYPTO_TICKERS    = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "COIN"]         # Crypto assets eligible for on-chain features
+TICKERS = ["COIN", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "TSLA", "NVDA", "AMZN", "META"] # High-momentum 15-asset growth and crypto universe
+SHORTABLE_TICKERS = ["COIN", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "TSLA", "NVDA", "AMZN", "META"] # All 15 assets allowed for shorting
+CRYPTO_TICKERS    = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "COIN"] # Crypto assets eligible for on-chain features
 START_DATE = "2023-01-01"      # Historical data start date
 END_DATE = "2026-06-25"        # Historical data end date
 INTERVAL = "1d"                # Timeframe interval (e.g., '1d')
@@ -49,7 +49,10 @@ ENABLE_BREAKEVEN = True        # Move SL to Entry once price moves 0.8 * ATR in 
 
 INITIAL_CAPITAL = 10000.0      # Starting backtest capital in USD
 MAX_ALLOCATION_PER_TRADE = 0.10# Max portfolio allocation per trade (quality-focused 10% for multi-asset trading)
-LEVERAGE = 10                  # 10x leverage multiplier for isolated futures margin
+LEVERAGE = 20                  # 20x leverage multiplier for isolated futures margin
+STRICT_TREND_LOCK = True       # Longs only above 200 SMA, Shorts only below 200 SMA
+EXTREME_FEAR_BLOCK = True      # Block short positions when Fear & Greed Index drops below FEAR_LIMIT
+FEAR_LIMIT = 25                # Extreme Fear threshold for blocking short entries
 
 # ----------------- REAL-WORLD RISK PROTECTIONS -----------------
 SLIPPAGE_PENALTY_PCT = 0.0015  # 0.15% slippage/fee penalty applied to every trade exit
