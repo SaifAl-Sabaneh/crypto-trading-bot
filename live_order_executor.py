@@ -44,19 +44,68 @@ SYMBOL_MAP = {
     'DOGE-USD': 'DOGE/USDT'
 }
 
+def get_eu_proxy():
+    """
+    Fetches a list of free European HTTP proxies from Geonode API,
+    and returns the first one that successfully pings api.binance.com.
+    """
+    import requests
+    url = "https://proxylist.geonode.com/api/proxy-list?limit=20&page=1&sort_by=lastChecked&sort_type=desc&protocols=http,https&country=DE,FR,NL,GB,IT,ES"
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json().get('data', [])
+            logger.info(f"Fetched {len(data)} free European proxies. Testing connection...")
+            for item in data:
+                ip = item.get('ip')
+                port = item.get('port')
+                proto = item.get('protocols', ['http'])[0]
+                proxy_str = f"{proto}://{ip}:{port}"
+                
+                # Test the proxy
+                try:
+                    test_resp = requests.get(
+                        "https://api.binance.com/api/v3/ping",
+                        proxies={"http": proxy_str, "https": proxy_str},
+                        timeout=5
+                    )
+                    if test_resp.status_code == 200:
+                        # Double check that we don't get the restricted location error!
+                        if "restricted location" not in test_resp.text:
+                            logger.info(f"Successfully found working EU Proxy: {proxy_str}")
+                            return proxy_str
+                except Exception:
+                    continue
+    except Exception as e:
+        logger.warning(f"Failed to fetch proxy list: {e}")
+    return None
+
 def get_exchange_connection():
     """Initializes and returns ccxt Binance Futures connection."""
     if not api_key or not secret_key:
         raise ValueError("Exchange API credentials missing in .env file.")
     
-    exchange = ccxt.binance({
+    config_dict = {
         'apiKey': api_key,
         'secret': secret_key,
         'enableRateLimit': True,
         'options': {
             'defaultType': 'future',  # Target USDT-M Futures account
         }
-    })
+    }
+    
+    # Bypass US IP blocks using auto-rotated European proxy
+    proxy = get_eu_proxy()
+    if proxy:
+        config_dict['proxies'] = {
+            'http': proxy,
+            'https': proxy
+        }
+        logger.info(f"Configured CCXT with working proxy: {proxy}")
+    else:
+        logger.warning("No working European proxies found. Connecting directly.")
+        
+    exchange = ccxt.binance(config_dict)
     return exchange
 
 def set_leverage_and_margin(exchange, symbol):
