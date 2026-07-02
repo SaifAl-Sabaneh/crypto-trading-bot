@@ -60,14 +60,20 @@ def get_eu_proxy():
                 proxy_str = f"http://{p}"
                 # Test the proxy
                 try:
-                    test_resp = requests.get(
+                    # Test both Linear Futures (fapi) and Inverse Futures (dapi)
+                    test_fapi = requests.get(
                         "https://fapi.binance.com/fapi/v1/ping",
                         proxies={"http": proxy_str, "https": proxy_str},
                         timeout=3
                     )
-                    if test_resp.status_code == 200:
-                        if "restricted location" not in test_resp.text:
-                            logger.info(f"Successfully found working EU Futures Proxy: {proxy_str}")
+                    test_dapi = requests.get(
+                        "https://dapi.binance.com/dapi/v1/ping",
+                        proxies={"http": proxy_str, "https": proxy_str},
+                        timeout=3
+                    )
+                    if test_fapi.status_code == 200 and test_dapi.status_code == 200:
+                        if "restricted location" not in test_fapi.text and "restricted location" not in test_dapi.text:
+                            logger.info(f"Successfully found working EU Full Futures Proxy: {proxy_str}")
                             return proxy_str
                 except Exception:
                     continue
