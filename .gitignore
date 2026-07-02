@@ -10,8 +10,6 @@ executed_trades.csv
 
 # Charts & Visual Reports
 *.png
-report.html
-*.joblib
 
 
 # Python Cache & Visual Studio
