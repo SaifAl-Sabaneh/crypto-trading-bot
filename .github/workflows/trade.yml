@@ -2,8 +2,8 @@ name: Daily Crypto Trade Execution
 
 on:
   schedule:
-    # Run daily at 00:37 UTC (3:37 AM Jordan Time) to bypass peak hour congestion
-    - cron: '37 0 * * *'
+    # Run every 4 hours at 37 minutes past the hour to bypass peak queue congestion (24/7 monitoring)
+    - cron: '37 */4 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
