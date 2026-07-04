@@ -49,7 +49,12 @@ SYMBOL_MAP = {
     'OP-USD': 'OP/USDT',
     'INJ-USD': 'INJ/USDT',
     'BCH-USD': 'BCH/USDT',
-    'SHIB-USD': 'SHIB/USDT'
+    'SHIB-USD': 'SHIB/USDT',
+    'WIF-USD': 'WIF/USDT',
+    'ONDO-USD': 'ONDO/USDT',
+    'FET-USD': 'FET/USDT',
+    'RENDER-USD': 'RENDER/USDT',
+    'TON11419-USD': 'TON/USDT'
 }
 
 def get_exchange_connection():
