@@ -23,7 +23,7 @@ REGIME_PERCENTILE_LIMIT = 75   # Volatility percentile limit above which trading
 LOOKBACK_PERCENTILE = 200      # Lookback window for computing rolling percentile
 
 USE_TREND_FILTER = True        # Only buy when price is above SMA_TREND_WINDOW
-SMA_TREND_WINDOW = 200         # Window for long-term trend filter
+SMA_TREND_WINDOW = 50          # Window for long-term trend filter (relaxed from 200 to 50 to capture recovery runs)
 EMA_TREND_WINDOW = 50          # Window for medium-term trend confirmation
 
 # ----------------- LAYER 2: ML ENSEMBLE CLASSIFIER -----------------
@@ -48,7 +48,7 @@ SL_ATR_MULT_SHORT = 1.0        # Stop-Loss multiplier for short positions (optim
 ENABLE_BREAKEVEN = True        # Move SL to Entry once price moves 0.8 * ATR in our favor (tightened)
 
 INITIAL_CAPITAL = 10000.0      # Starting backtest capital in USD
-MAX_ALLOCATION_PER_TRADE = 0.10# Max portfolio allocation per trade (quality-focused 10% for multi-asset trading)
+MAX_ALLOCATION_PER_TRADE = 0.20# Max portfolio allocation per trade (quality-focused 20% for faster compounded gains)
 LEVERAGE = 20                  # 20x leverage multiplier for isolated futures margin
 STRICT_TREND_LOCK = True       # Longs only above 200 SMA, Shorts only below 200 SMA
 EXTREME_FEAR_BLOCK = True      # Block short positions when Fear & Greed Index drops below FEAR_LIMIT

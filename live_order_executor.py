@@ -319,16 +319,16 @@ def execute_live_trading():
                     veto_log.append(f"• **{ticker}** vetoed: Crisis Market Regime halt")
                 
                 if allow_entry and (is_long_triggered or is_short_triggered):
-                    # 1. Check Strict Trend Lock (Longs only above 200 SMA, Shorts only below 200 SMA)
+                    # 1. Check Strict Trend Lock (Longs only above SMA, Shorts only below SMA)
                     if getattr(config, 'STRICT_TREND_LOCK', False):
                         sma200 = float(df_clean.iloc[-1]['SMA_200'])
                         if is_long_triggered and latest_close < sma200:
-                            logger.info(f"Trend Lock: VETOED LONG on {symbol} — price ({latest_close:.2f}) is below 200 SMA ({sma200:.2f}).")
-                            veto_log.append(f"• **{ticker}** long vetoed: Price (${latest_close:.2f}) below 200 SMA (${sma200:.2f})")
+                            logger.info(f"Trend Lock: VETOED LONG on {symbol} — price ({latest_close:.2f}) is below {config.SMA_TREND_WINDOW} SMA ({sma200:.2f}).")
+                            veto_log.append(f"• **{ticker}** long vetoed: Price (${latest_close:.2f}) below {config.SMA_TREND_WINDOW} SMA (${sma200:.2f})")
                             continue
                         if is_short_triggered and latest_close > sma200:
-                            logger.info(f"Trend Lock: VETOED SHORT on {symbol} — price ({latest_close:.2f}) is above 200 SMA ({sma200:.2f}).")
-                            veto_log.append(f"• **{ticker}** short vetoed: Price (${latest_close:.2f}) above 200 SMA (${sma200:.2f})")
+                            logger.info(f"Trend Lock: VETOED SHORT on {symbol} — price ({latest_close:.2f}) is above {config.SMA_TREND_WINDOW} SMA ({sma200:.2f}).")
+                            veto_log.append(f"• **{ticker}** short vetoed: Price (${latest_close:.2f}) above {config.SMA_TREND_WINDOW} SMA (${sma200:.2f})")
                             continue
                             
                     # 2. Check Extreme Fear Block (No shorting if F&G index < 25)
