@@ -144,6 +144,25 @@ def cancel_all_orders(exchange, symbol):
     except Exception as e:
         logger.warning(f"Could not cancel orders for {symbol}: {e}")
 
+def calculate_weekly_pnl(trade_history):
+    """Calculates total PnL USD of trades closed in the last 7 days."""
+    if not trade_history:
+        return 0.0
+    total_pnl = 0.0
+    now = datetime.now()
+    seven_days_ago = now - timedelta(days=7)
+    for t in trade_history:
+        try:
+            exit_time_str = t.get('ExitTime', '')
+            if not exit_time_str:
+                continue
+            exit_time = datetime.strptime(exit_time_str[:16], "%Y-%m-%d %H:%M")
+            if exit_time >= seven_days_ago:
+                total_pnl += float(t.get('PnL_USD', 0.0))
+        except Exception:
+            pass
+    return total_pnl
+
 def execute_live_trading():
     logger.info("Starting Live Order Execution Engine...")
     
@@ -459,6 +478,16 @@ def execute_live_trading():
         except Exception as e:
             logger.warning(f"Failed to fetch active positions for Discord report: {e}")
 
+        # Calculate weekly PnL and formulate acceleration tip
+        weekly_pnl = calculate_weekly_pnl(trade_history)
+        acceleration_msg = ""
+        if weekly_pnl > 0.0:
+            acceleration_msg = (
+                f"🚀 **Roadmap Acceleration Tip**:\n"
+                f"• Weekly Profit: `+${weekly_pnl:,.2f} USDT`!\n"
+                f"• The bot is on a winning streak. Consider depositing **$20 to $50** to speed up your compounding towards the $10,000 goal!\n\n"
+            )
+
         reasons_msg = ""
         if trades_triggered > 0:
             reasons_msg = "• Status: Trades executed successfully."
@@ -473,6 +502,7 @@ def execute_live_trading():
             f"• Active Positions: `{len(current_active)}`\n"
             f"• Trades Triggered Today: `{trades_triggered}`\n\n"
             f"{pos_msg}"
+            f"{acceleration_msg}"
             f"{reasons_msg}\n\n"
             f"• Status: Active & Monitoring"
         )
