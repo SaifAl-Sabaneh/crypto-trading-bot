@@ -444,6 +444,21 @@ def execute_live_trading():
 
     # Send daily status summary to Discord
     try:
+        current_active = {}
+        pos_msg = ""
+        try:
+            current_active = check_active_positions(exchange)
+            if current_active:
+                pos_msg = "💼 **Active Positions Details**:\n"
+                for sym, p in current_active.items():
+                    pnl_usd = p['unrealized_pnl']
+                    side_str = p['side'].upper()
+                    display_sym = sym.split('/')[0]
+                    pos_msg += f"• **{display_sym}** {side_str} | Entry: ${p['entry_price']:.5f} | PnL: **{pnl_usd:+.2f} USDT**\n"
+                pos_msg += "\n"
+        except Exception as e:
+            logger.warning(f"Failed to fetch active positions for Discord report: {e}")
+
         reasons_msg = ""
         if trades_triggered > 0:
             reasons_msg = "• Status: Trades executed successfully."
@@ -455,8 +470,9 @@ def execute_live_trading():
         summary_msg = (
             f"📊 **Daily Crypto Scan Complete**\n"
             f"• Futures Balance: `${usdt_balance:,.2f}`\n"
-            f"• Active Positions: `{len(active_positions)}`\n"
+            f"• Active Positions: `{len(current_active)}`\n"
             f"• Trades Triggered Today: `{trades_triggered}`\n\n"
+            f"{pos_msg}"
             f"{reasons_msg}\n\n"
             f"• Status: Active & Monitoring"
         )
