@@ -67,6 +67,16 @@ def main():
             # Calculate 4h_Bullish placeholder (needed for signal execution)
             df['4h_Bullish'] = 1.0 # Default value
             
+            # Calculate HMM regimes for switching logic
+            try:
+                from hmm_regime import HMMRegimeClassifier
+                classifier = HMMRegimeClassifier()
+                classifier.fit(df)
+                df['Regime_Label'] = classifier.predict_regime(df)
+            except Exception as hmm_err:
+                logger.warning(f"Failed to fit HMM on {ticker}: {hmm_err}")
+                df['Regime_Label'] = 'Bull'
+            
             # Drop NaN rows
             df_clean = df.dropna(subset=feature_cols + ['Target', 'SMA_200']).copy()
             processed_dfs[ticker] = df_clean
@@ -92,18 +102,35 @@ def main():
             train_features_equity.append(df[feature_cols])
             train_targets_equity.append(df['Target'])
             
-    # 4. Train the Crypto Ensemble
+    # 4. Train the Crypto Ensemble (Baseline & Regime-Switched Ensembles)
     if train_features_crypto:
         X_crypto = pd.concat(train_features_crypto, axis=0)
         y_crypto = pd.concat(train_targets_crypto, axis=0)
-        logger.info(f"Training Crypto Ensemble on {len(X_crypto)} samples...")
+        regimes_crypto = pd.concat([df['Regime_Label'] for tick, df in processed_dfs.items() if tick in config.SHORTABLE_TICKERS], axis=0)
         
+        # Save baseline model
+        logger.info(f"Training Baseline Crypto Ensemble on {len(X_crypto)} samples...")
         crypto_ensemble.fit(X_crypto, y_crypto)
-        # Train meta-labeler
         crypto_ensemble.fit_meta_model(X_crypto, y_crypto)
-        
-        # Save model
         crypto_ensemble.save('crypto_ensemble.joblib')
+        
+        # Train regime-specific models
+        for regime in ['Bull', 'Bear', 'Sideways']:
+            mask = regimes_crypto == regime
+            if mask.sum() >= 100:
+                X_reg = X_crypto[mask]
+                y_reg = y_crypto[mask]
+                logger.info(f"Training {regime} Crypto Ensemble on {len(X_reg)} samples...")
+                
+                m = EnsembleTradingModel()
+                m.fit(X_reg, y_reg)
+                m.fit_meta_model(X_reg, y_reg)
+                m.save(f'crypto_ensemble_{regime}.joblib')
+            else:
+                logger.warning(f"Insufficient samples ({mask.sum()}) to train {regime} Crypto Ensemble. Copying baseline.")
+                import shutil
+                if os.path.exists('crypto_ensemble.joblib'):
+                    shutil.copy('crypto_ensemble.joblib', f'crypto_ensemble_{regime}.joblib')
     else:
         logger.warning("No crypto training data found.")
         
@@ -122,7 +149,7 @@ def main():
     else:
         logger.warning("No equity training data found.")
         
-    logger.info("One-time training complete! Specialized sector models are ready on disk.")
+    logger.info("One-time training complete! Regime-switched and sector models are ready on disk.")
 
 if __name__ == "__main__":
     main()

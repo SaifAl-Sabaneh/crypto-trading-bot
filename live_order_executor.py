@@ -290,6 +290,19 @@ def execute_live_trading():
         logger.error("Model files missing. Run training first.")
         return
     crypto_ensemble.load('crypto_ensemble.joblib')
+    
+    # Load Regime-Switched Models
+    regime_models = {}
+    for regime in ['Bull', 'Bear', 'Sideways']:
+        regime_file = f'crypto_ensemble_{regime}.joblib'
+        if os.path.exists(regime_file):
+            try:
+                m = EnsembleTradingModel()
+                m.load(regime_file)
+                regime_models[regime] = m
+                logger.info(f"Successfully loaded regime-specific model for: {regime}")
+            except Exception as le:
+                logger.warning(f"Failed to load regime model for {regime}: {le}")
 
     # Load RL Agent if enabled
     rl_agent = None
@@ -347,17 +360,18 @@ def execute_live_trading():
             latest_close = float(df_clean.iloc[-1]['Close'])
             atr_val = float(df_clean.iloc[-1]['ATR'])
             
-            # Predict signal
-            sig, probs = crypto_ensemble.predict_signals(X_today, history=history)
-            sig_val = sig[0]
-            prob_val = probs[0]
-            
-            # Check market regime (HMM)
+            # Check market regime (HMM) first to swap the correct model ensemble
             from regime_filter import MarketRegimeFilter
             regime_filter = MarketRegimeFilter()
             regime_scales = regime_filter.compute_regime_sizing(df_clean)
             regime_scale = float(regime_scales.iloc[-1])
             current_regime = str(df_clean.iloc[-1]['Regime_Label'])
+            
+            # Predict signal using active regime-specific model
+            active_model = regime_models.get(current_regime, crypto_ensemble)
+            sig, probs = active_model.predict_signals(X_today, history=history)
+            sig_val = sig[0]
+            prob_val = probs[0]
             
             logger.info(f"{ticker} -> Signal: {sig_val}, Prob: {prob_val:.2%}, Regime: {current_regime} (Scale: {regime_scale})")
 
@@ -522,6 +536,18 @@ def execute_live_trading():
                 # Ensure entry is allowed (no crisis regime, and signal fits confidence trigger)
                 allow_entry = (regime_scale > 0.0)
                 
+                # Weekend Liquidity Filter (Friday 20:00 UTC to Sunday 22:00 UTC)
+                now_utc = datetime.utcnow()
+                weekday = now_utc.weekday()
+                hour = now_utc.hour
+                is_weekend = False
+                if (weekday == 4 and hour >= 20) or (weekday == 5) or (weekday == 6 and hour < 22):
+                    is_weekend = True
+                
+                if is_weekend:
+                    logger.info("Weekend Liquidity Filter: Blocking new entries to avoid low-volume range chop.")
+                    allow_entry = False
+                
                 # Dynamic Threshold Selection based on HMM Regime
                 # Adapts entry requirements dynamically to balance compounding speed and capital protection
                 thresh_long = getattr(config, 'CONFIDENCE_THRESHOLD_LONG', 0.45)
@@ -541,9 +567,23 @@ def execute_live_trading():
                 is_long_triggered = (sig_val == 1 and prob_val >= thresh_long)
                 is_short_triggered = (sig_val == -1 and prob_val <= thresh_short)
                 
+                # Regime-Adaptive Correlation Cap
+                # In Sideways chop, limit portfolio to max 1 Long and 1 Short across all crypto assets
+                if allow_entry and (is_long_triggered or is_short_triggered) and current_regime == 'Sideways':
+                    target_direction = 'long' if is_long_triggered else 'short'
+                    existing_direction_count = sum(
+                        1 for pos_sym, pos_val in active_positions.items() 
+                        if pos_val['side'] == target_direction
+                    )
+                    if existing_direction_count >= 1:
+                        logger.info(f"Correlation Cap: VETOED entry on {symbol} — a {target_direction} position is already open during Sideways chop.")
+                        veto_log.append(f"• **{ticker}** vetoed: Correlation Cap ({target_direction} already open)")
+                        allow_entry = False
+                
                 if not allow_entry and (is_long_triggered or is_short_triggered):
-                    logger.info(f"Regime Block: VETOED entry on {symbol} due to Crisis regime halt.")
-                    veto_log.append(f"• **{ticker}** vetoed: Crisis Market Regime halt")
+                    if not is_weekend and not (current_regime == 'Sideways' and existing_direction_count >= 1):
+                        logger.info(f"Regime Block: VETOED entry on {symbol} due to Crisis regime halt.")
+                        veto_log.append(f"• **{ticker}** vetoed: Crisis Market Regime halt")
                 
                 if allow_entry and (is_long_triggered or is_short_triggered):
                     # 1. Check Strict Trend Lock (Longs only above SMA, Shorts only below SMA)
@@ -582,8 +622,19 @@ def execute_live_trading():
                         logger.warning("Futures account balance too low to trade.")
                         continue
                         
-                    # Calculate margin cash allocated (20%)
-                    margin_allocated = usdt_balance * config.MAX_ALLOCATION_PER_TRADE
+                    # Calculate Kelly-optimal allocation fraction
+                    try:
+                        from kelly import KellySizer
+                        sizer = KellySizer()
+                        direction_val = 1 if is_long_triggered else -1
+                        kelly_fraction = sizer.compute(prob_val, direction_val)
+                        logger.info(f"Kelly Sizer: Optimal allocation fraction for {symbol} is {kelly_fraction:.2%}")
+                    except Exception as ke:
+                        logger.warning(f"Failed to calculate Kelly allocation for {symbol}: {ke}. Falling back to default.")
+                        kelly_fraction = getattr(config, 'MAX_ALLOCATION_PER_TRADE', 0.20)
+                    
+                    # Calculate margin cash allocated based on Kelly
+                    margin_allocated = usdt_balance * kelly_fraction
                     margin_allocated = max(2.50, margin_allocated) # Minimum $2.50 floor for sandbox
                     
                     # Sizing scale based on HMM
