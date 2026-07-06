@@ -55,7 +55,13 @@ SYMBOL_MAP = {
     'ONDO-USD': 'ONDO/USDT',
     'FET-USD': 'FET/USDT',
     'RENDER-USD': 'RENDER/USDT',
-    'TON11419-USD': 'TON/USDT'
+    'TON11419-USD': 'TON/USDT',
+    'PEPE24478-USD': '1000PEPE/USDT',
+    'TAO22974-USD': 'TAO/USDT',
+    'FTM-USD': 'FTM/USDT',
+    'WLD-USD': 'WLD/USDT',
+    'APT-USD': 'APT/USDT',
+    'TIA-USD': 'TIA/USDT'
 }
 
 def get_exchange_connection():

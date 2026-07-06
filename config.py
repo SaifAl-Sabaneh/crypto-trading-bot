@@ -10,9 +10,9 @@ SECRET_KEY = os.getenv("EXCHANGE_SECRET_KEY", "")
 IS_SANDBOX = False            # Safe mode: True for mock paper-trading, False for live money
 
 # ----------------- DATA SETTINGS -----------------
-TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "SUI20947-USD", "NEAR-USD", "LTC-USD", "TRX-USD", "OP-USD", "INJ-USD", "BCH-USD", "SHIB-USD", "WIF-USD", "ONDO-USD", "FET-USD", "RENDER-USD", "TON11419-USD"] # High-momentum crypto universe
-SHORTABLE_TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "SUI20947-USD", "NEAR-USD", "LTC-USD", "TRX-USD", "OP-USD", "INJ-USD", "BCH-USD", "SHIB-USD", "WIF-USD", "ONDO-USD", "FET-USD", "RENDER-USD", "TON11419-USD"]
-CRYPTO_TICKERS    = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "SUI20947-USD", "NEAR-USD", "LTC-USD", "TRX-USD", "OP-USD", "INJ-USD", "BCH-USD", "SHIB-USD", "WIF-USD", "ONDO-USD", "FET-USD", "RENDER-USD", "TON11419-USD"] # Crypto assets eligible for on-chain features
+TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "SUI20947-USD", "NEAR-USD", "LTC-USD", "TRX-USD", "OP-USD", "INJ-USD", "BCH-USD", "SHIB-USD", "WIF-USD", "ONDO-USD", "FET-USD", "RENDER-USD", "TON11419-USD", "PEPE24478-USD", "TAO22974-USD", "FTM-USD", "WLD-USD", "APT-USD", "TIA-USD"] # High-momentum crypto universe
+SHORTABLE_TICKERS = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "SUI20947-USD", "NEAR-USD", "LTC-USD", "TRX-USD", "OP-USD", "INJ-USD", "BCH-USD", "SHIB-USD", "WIF-USD", "ONDO-USD", "FET-USD", "RENDER-USD", "TON11419-USD", "PEPE24478-USD", "TAO22974-USD", "FTM-USD", "WLD-USD", "APT-USD", "TIA-USD"]
+CRYPTO_TICKERS    = ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AVAX-USD", "LINK-USD", "ADA-USD", "XRP-USD", "DOT-USD", "DOGE-USD", "SUI20947-USD", "NEAR-USD", "LTC-USD", "TRX-USD", "OP-USD", "INJ-USD", "BCH-USD", "SHIB-USD", "WIF-USD", "ONDO-USD", "FET-USD", "RENDER-USD", "TON11419-USD", "PEPE24478-USD", "TAO22974-USD", "FTM-USD", "WLD-USD", "APT-USD", "TIA-USD"] # Crypto assets eligible for on-chain features
 START_DATE = "2023-01-01"      # Historical data start date
 END_DATE = "2026-06-25"        # Historical data end date
 INTERVAL = "4h"                # Timeframe interval (resampled from 1h for 4-hour scans)
