@@ -522,9 +522,24 @@ def execute_live_trading():
                 # Ensure entry is allowed (no crisis regime, and signal fits confidence trigger)
                 allow_entry = (regime_scale > 0.0)
                 
+                # Dynamic Threshold Selection based on HMM Regime
+                # Adapts entry requirements dynamically to balance compounding speed and capital protection
+                thresh_long = getattr(config, 'CONFIDENCE_THRESHOLD_LONG', 0.45)
+                thresh_short = getattr(config, 'CONFIDENCE_THRESHOLD_SHORT', 0.33)
+                
+                if current_regime == 'Bull':
+                    thresh_long = 0.41  # Aggressive longs in bull trend
+                    thresh_short = 0.20 # High-conviction safety filter for shorts in bull trend
+                elif current_regime == 'Bear':
+                    thresh_long = 0.47  # High-conviction safety filter for longs in bear trend
+                    thresh_short = 0.28 # Adaptive shorts in bear trend
+                else: # 'Sideways' or choppy regimes
+                    thresh_long = 0.45  # Strict longs to filter chop
+                    thresh_short = 0.25 # Strict shorts to filter chop
+                
                 # Check confidence triggers
-                is_long_triggered = (sig_val == 1 and prob_val >= config.CONFIDENCE_THRESHOLD_LONG)
-                is_short_triggered = (sig_val == -1 and prob_val <= config.CONFIDENCE_THRESHOLD_SHORT)
+                is_long_triggered = (sig_val == 1 and prob_val >= thresh_long)
+                is_short_triggered = (sig_val == -1 and prob_val <= thresh_short)
                 
                 if not allow_entry and (is_long_triggered or is_short_triggered):
                     logger.info(f"Regime Block: VETOED entry on {symbol} due to Crisis regime halt.")
