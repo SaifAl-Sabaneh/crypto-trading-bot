@@ -30,14 +30,14 @@ const PORTFOLIO_STATE = {
     "META"
   ],
   "initial_capital": 32.33,
-  "final_value": 14.98051337,
-  "return_pct": -0.5366373841633157,
+  "final_value": 17.75614801,
+  "return_pct": -0.4507841630064955,
   "benchmark_return_pct": 0.0,
   "max_drawdown": 0.0,
   "sharpe_ratio": 0.0,
   "trades_count": 0,
   "win_rate": 0.0,
-  "last_updated": "2026-07-05 21:36:00",
+  "last_updated": "2026-07-06 01:16:24",
   "circuit_breaker_tripped": false,
   "circuit_breaker_date": "",
   "equity_curve": [
