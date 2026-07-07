@@ -759,7 +759,7 @@ def execute_live_trading():
         try:
             current_futures_balance = get_futures_balance(exchange)
             safety_threshold = getattr(config, 'FUTURES_SAFETY_THRESHOLD', 30.0)
-            if current_futures_balance > (safety_threshold + 1.0):
+            if current_futures_balance >= (safety_threshold + 5.0):
                 excess = current_futures_balance - safety_threshold
                 logger.info(f"Profit Sweep: Excess balance detected: ${excess:.2f} USDT. Initiating transfer from Futures to Spot...")
                 
