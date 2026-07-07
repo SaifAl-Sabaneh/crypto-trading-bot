@@ -61,7 +61,10 @@ SYMBOL_MAP = {
     'FTM-USD': 'FTM/USDT',
     'WLD-USD': 'WLD/USDT',
     'APT-USD': 'APT/USDT',
-    'TIA-USD': 'TIA/USDT'
+    'TIA-USD': 'TIA/USDT',
+    'RUNE-USD': 'RUNE/USDT',
+    'JUP-USD': 'JUP/USDT',
+    'LDO-USD': 'LDO/USDT'
 }
 
 def get_exchange_connection():
