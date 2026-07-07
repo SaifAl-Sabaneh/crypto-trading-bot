@@ -805,7 +805,15 @@ def execute_live_trading():
                 usdt_balance = get_futures_balance(exchange)
         except Exception as te:
             logger.error(f"Profit Sweep: Transfer or purchase failed: {te}")
-            send_push_notification(f"⚠️ **[WARNING]** Profit Sweep execution failed: {te}")
+            error_str = str(te).lower()
+            if "-1002" in error_str or "authorized" in error_str:
+                send_push_notification(
+                    f"💰 **[PROFIT SWEEP REMINDER]** You have **${excess:.2f} USDT** of excess trading profits in your Futures wallet!\n"
+                    f"• *Binance blocked the auto-transfer due to dynamic IP security constraints.*\n"
+                    f"• **Action Required**: Please manually transfer **${excess:.2f} USDT** from Futures to Spot on your Binance app. Once transferred, the Spot Rebalancer will automatically handle the rest! 📱"
+                )
+            else:
+                send_push_notification(f"⚠️ **[WARNING]** Profit Sweep execution failed: {te}")
 
     # Update live dashboard files and push to GitHub
     try:
