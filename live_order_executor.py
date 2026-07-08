@@ -621,7 +621,28 @@ def execute_live_trading():
                         if not confirmed:
                             logger.info(f"RL Agent: VETOED entry signal on {symbol} due to poor Q-value regime profile.")
                             veto_log.append(f"• **{ticker}** vetoed: Q-Learning Agent veto")
-                            continue
+                    # 4. Check Smart Money / Whale Position Ratio
+                    if getattr(config, 'ENABLE_SMART_MONEY_FILTER', False):
+                        try:
+                            import requests
+                            binance_symbol = symbol.replace('/', '').split(':')[0]
+                            url = f"https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol={binance_symbol}&period={getattr(config, 'SMART_MONEY_PERIOD', '4h')}&limit=1"
+                            res = requests.get(url, timeout=5).json()
+                            if res and isinstance(res, list):
+                                latest_data = res[0]
+                                ratio = float(latest_data['longShortRatio'])
+                                logger.info(f"Smart Money: {binance_symbol} Long/Short Position Ratio: {ratio:.2f}")
+                                
+                                if is_long_triggered and ratio < getattr(config, 'SMART_MONEY_THRESHOLD_LONG', 1.0):
+                                    logger.info(f"Smart Money VETO: LONG on {symbol} blocked. Whales are net-short (Ratio: {ratio:.2f} < 1.0).")
+                                    veto_log.append(f"• **{ticker}** long vetoed: Smart Money net-short ({ratio:.2f})")
+                                    continue
+                                if is_short_triggered and ratio > getattr(config, 'SMART_MONEY_THRESHOLD_SHORT', 1.0):
+                                    logger.info(f"Smart Money VETO: SHORT on {symbol} blocked. Whales are net-long (Ratio: {ratio:.2f} > 1.0).")
+                                    veto_log.append(f"• **{ticker}** short vetoed: Smart Money net-long ({ratio:.2f})")
+                                    continue
+                        except Exception as sme:
+                            logger.warning(f"Failed to fetch Smart Money ratio for {symbol}: {sme}. Proceeding without filter.")
                             
                     logger.info(f"Triggering entry for {symbol} ({'LONG' if is_long_triggered else 'SHORT'})...")
                     

@@ -127,6 +127,13 @@ SPOT_REBALANCE_ALLOCATION = {
 SPOT_REBALANCE_THRESHOLD = 0.03    # Rebalance only if deviation exceeds 3%
 
 
+# ----------------- SMART MONEY WHALE FILTER -----------------
+ENABLE_SMART_MONEY_FILTER = True
+SMART_MONEY_PERIOD = "4h"          # Check 4-hour whale ratios
+SMART_MONEY_THRESHOLD_LONG = 1.0   # Do not long if whales are net-short (ratio < 1.0)
+SMART_MONEY_THRESHOLD_SHORT = 1.0  # Do not short if whales are net-long (ratio > 1.0)
+
+
 # ----------------- SYSTEM LOGGING -----------------
 LOG_FILE_PATH = "trading_bot.log"
 LOG_LEVEL = "INFO"             # DEBUG, INFO, WARNING, ERROR, CRITICAL
