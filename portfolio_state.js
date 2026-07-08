@@ -34,14 +34,14 @@ const PORTFOLIO_STATE = {
     "LDO-USD"
   ],
   "initial_capital": 32.33,
-  "final_value": 30.57894671,
-  "return_pct": -0.054161871017630626,
+  "final_value": 29.96460981,
+  "return_pct": -0.07316394030312402,
   "benchmark_return_pct": 0.0,
   "max_drawdown": 0.0,
   "sharpe_ratio": 0.0,
   "trades_count": 0,
   "win_rate": 0.0,
-  "last_updated": "2026-07-08 09:17:10",
+  "last_updated": "2026-07-08 10:37:54",
   "circuit_breaker_tripped": false,
   "circuit_breaker_date": "",
   "equity_curve": [
