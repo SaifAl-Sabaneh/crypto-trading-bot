@@ -128,18 +128,8 @@ def build_features(df, ticker=None):
     df['MACD_Signal'] = signal_line
     df['MACD_Hist'] = macd_hist
     
-    upper, lower, width, rel_pos = calculate_bollinger_bands(df['Close'])
-    df['BB_Width'] = width
-    df['BB_RelPos'] = rel_pos
-    
     df['ATR'] = calculate_atr(df)
     df['ATR_Pct'] = df['ATR'] / df['Close']  # ATR normalized by Close price
-    
-    # Stochastic & ADX
-    stoch_k, stoch_d = calculate_stochastic(df)
-    df['Stoch_K'] = stoch_k
-    df['Stoch_D'] = stoch_d
-    df['ADX'] = calculate_adx(df)
     
     # Volatility features (rolling std of log returns)
     log_returns = np.log(df['Close'] / df['Close'].shift(1))
@@ -153,21 +143,15 @@ def build_features(df, ticker=None):
     df['Ret_5'] = df['Close'].pct_change(5)
     df['Ret_10'] = df['Close'].pct_change(10)
     
-    # Trend (SMA ratios)
-    df['SMA_10'] = df['Close'].rolling(10).mean()
-    df['SMA_50'] = df['Close'].rolling(50).mean()
-    df['SMA_Ratio'] = df['SMA_10'] / (df['SMA_50'] + 1e-10)
-    
     # Calculate SMA_200 for the trend filter (used in execution, not as a direct ML feature)
     df['SMA_200'] = df['Close'].rolling(config.SMA_TREND_WINDOW).mean()
     
     # Drop intermediate columns that shouldn't be direct features
     feature_cols = [
         'RSI', 'MACD', 'MACD_Signal', 'MACD_Hist', 
-        'BB_Width', 'BB_RelPos', 'ATR_Pct', 
+        'ATR_Pct', 
         'Vol_5', 'Vol_10', 'Vol_20', 
-        'Ret_1', 'Ret_3', 'Ret_5', 'Ret_10', 
-        'SMA_Ratio', 'Stoch_K', 'Stoch_D', 'ADX'
+        'Ret_1', 'Ret_3', 'Ret_5', 'Ret_10'
     ]
     
     if config.USE_SENTIMENT:
@@ -183,6 +167,8 @@ def build_features(df, ticker=None):
             start_str = df.index[0].strftime("%Y-%m-%d")
             end_str = df.index[-1].strftime("%Y-%m-%d")
             macro_df = fetch_macro_features(start_str, end_str)
+            if not macro_df.empty:
+                macro_df = macro_df.shift(1)  # Shift by 1 day to eliminate look-ahead leakage
             macro_cols = [
                 'Macro_DXY_Return', 'Macro_DXY_Trend', 'Macro_VIX', 
                 'Macro_VIX_Zscore', 'Macro_Yield_Spread', 
@@ -207,6 +193,8 @@ def build_features(df, ticker=None):
                 start_str = df.index[0].strftime("%Y-%m-%d")
                 end_str = df.index[-1].strftime("%Y-%m-%d")
                 onchain_df = fetch_onchain_features(ticker, start_str, end_str)
+                if not onchain_df.empty:
+                    onchain_df = onchain_df.shift(1)  # Shift by 1 day to account for reporting lag and eliminate leakage
                 for col in onchain_cols:
                     if not onchain_df.empty and col in onchain_df.columns:
                         df[col] = onchain_df[col].reindex(df.index).ffill().fillna(0.0)
