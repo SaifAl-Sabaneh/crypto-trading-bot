@@ -62,7 +62,7 @@ MAX_NOTIONAL_ALLOCATION_PCT = 0.50 # Max notional value of a single trade as a %
 ENABLE_SENTIMENT_SIZING = True  # Scale position sizes based on global news sentiment
 SENTIMENT_SIZE_ALIGNED = 1.0    # 100% allocation if AI signal aligns with news sentiment
 SENTIMENT_SIZE_MISALIGNED = 0.25 # 25% allocation if AI signal conflicts with news sentiment (coin-flip trades)
-STRICT_TREND_LOCK = True       # Longs only above 200 SMA, Shorts only below 200 SMA
+STRICT_TREND_LOCK = False       # Longs only above 200 SMA, Shorts only below 200 SMA
 EXTREME_FEAR_BLOCK = True      # Block short positions when Fear & Greed Index drops below FEAR_LIMIT
 FEAR_LIMIT = 25                # Extreme Fear threshold for blocking short entries
 
@@ -130,7 +130,7 @@ SPOT_REBALANCE_THRESHOLD = 0.03    # Rebalance only if deviation exceeds 3%
 
 
 # ----------------- SMART MONEY WHALE FILTER -----------------
-ENABLE_SMART_MONEY_FILTER = True
+ENABLE_SMART_MONEY_FILTER = False
 SMART_MONEY_PERIOD = "4h"          # Check 4-hour whale ratios
 SMART_MONEY_THRESHOLD_LONG = 1.0   # Do not long if whales are net-short (ratio < 1.0)
 SMART_MONEY_THRESHOLD_SHORT = 1.0  # Do not short if whales are net-long (ratio > 1.0)
