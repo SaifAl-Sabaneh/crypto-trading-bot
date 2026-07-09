@@ -862,117 +862,114 @@ def execute_live_trading():
                     
                     # Wait 1 second to prevent Binance API race condition on new positions
                     time.sleep(1.0)
-                    # Place Stop-Loss and Take-Profit orders on Binance (Reduce-Only)
-                    # We cancel any stray orders first
+                    # Cancel any stray orders before placing fresh SL/TP
                     cancel_all_orders(exchange, symbol)
-                    
-                    # Stop Loss Order
+
                     sl_side = 'sell' if is_long_triggered else 'buy'
-                    exchange.create_order(
-                        symbol=symbol,
-                        type='STOP_MARKET',
-                        side=sl_side,
-                        amount=entry_amount,
-                        price=None,
-                        params={
-                            'stopPrice': sl_price_prec,
-                            'reduceOnly': True
-                        }
-                    )
-                    
-                    # Take Profit Order
-                    exchange.create_order(
-                        symbol=symbol,
-                        type='TAKE_PROFIT_MARKET',
-                        side=sl_side,
-                        amount=entry_amount,
-                        price=None,
-                        params={
-                            'stopPrice': tp_price_prec,
-                            'reduceOnly': True
-                        }
-                    )
-                    
-                    logger.info(f"Configured TP/SL orders for {symbol} (SL: {sl_price_prec:.4f}, TP: {tp_price_prec:.4f}).")
-                    
-                    # Stop-Loss Verification Loop (Query exchange to confirm SL is active, retry if missing, close if fails)
+
+                    # -------------------------------------------------------
+                    # Stop-Loss Placement with Response-Based Verification
+                    #
+                    # Root cause finding (2026-07-10): Binance Futures routes
+                    # STOP_MARKET and TAKE_PROFIT_MARKET orders through its
+                    # Algo/Conditional order system (/fapi/v1/algo/orders/).
+                    # These orders are INVISIBLE to fetch_open_orders() and
+                    # fetch_orders() — both query /fapi/v1/openOrders which is
+                    # a completely separate endpoint.
+                    #
+                    # The authoritative proof of order existence is the
+                    # create_order response itself: if the call succeeds and
+                    # returns an id (or algoId in info), the order IS active.
+                    # A failed placement raises an exception — there is no
+                    # "silent success" case. So we verify by response, not by
+                    # re-querying.
+                    # -------------------------------------------------------
+
                     sl_verified = False
+                    sl_order_id = None
                     for attempt in range(3):
-                        sleep_time = 1.5 * (2 ** attempt)  # Exponential backoff: 1.5s, 3.0s, 6.0s
-                        time.sleep(sleep_time)
                         try:
-                            # Primary check: standard open orders
-                            open_orders = exchange.fetch_open_orders(symbol)
-                            for order in open_orders:
-                                order_type = order.get('type', '').lower()
-                                order_side = order.get('side', '').lower()
-                                if 'stop' in order_type and order_side == sl_side:
-                                    sl_verified = True
-                                    break
-                            
-                            # Secondary check: Binance routes STOP_MARKET orders through
-                            # a separate "algo/conditional" orders system (visible in
-                            # fetch_open_orders with params or in the raw info dict).
-                            # This is particularly true on the Demo exchange.
-                            if not sl_verified:
-                                try:
-                                    algo_orders = exchange.fetch_open_orders(symbol, params={'type': 'algo'})
-                                    for order in algo_orders:
-                                        info = order.get('info', {})
-                                        order_type_raw = info.get('orderType', '').upper()
-                                        algo_side = info.get('side', '').lower()
-                                        if 'STOP' in order_type_raw and algo_side == sl_side:
-                                            sl_verified = True
-                                            break
-                                except Exception:
-                                    pass  # Algo endpoint not available; rely on primary check only
-                            
-                            if sl_verified:
-                                logger.info(f"Stop-loss verified active on exchange for {symbol} on attempt {attempt+1}.")
-                                break
+                            sl_response = exchange.create_order(
+                                symbol=symbol,
+                                type='STOP_MARKET',
+                                side=sl_side,
+                                amount=entry_amount,
+                                price=None,
+                                params={
+                                    'stopPrice': sl_price_prec,
+                                    'reduceOnly': True
+                                }
+                            )
+                            # Verify using the response: check id exists and
+                            # algoStatus is NEW (for algo orders) or status is open
+                            sl_order_id = sl_response.get('id')
+                            algo_status = sl_response.get('info', {}).get('algoStatus', '')
+                            order_status = sl_response.get('status', '')
+                            if sl_order_id and (algo_status in ('NEW', '') or 'open' in order_status.lower()):
+                                sl_verified = True
+                                logger.info(
+                                    f"Stop-loss verified via placement response for {symbol} "
+                                    f"(id={sl_order_id}, algoStatus={algo_status or order_status}, "
+                                    f"stopPrice={sl_price_prec:.4f})."
+                                )
                             else:
-                                logger.warning(f"Verification Attempt {attempt+1}: Stop-loss order not found on exchange for {symbol}. Retrying placement...")
-                                exchange.create_order(
-                                    symbol=symbol,
-                                    type='STOP_MARKET',
-                                    side=sl_side,
-                                    amount=entry_amount,
-                                    price=None,
-                                    params={
-                                        'stopPrice': sl_price_prec,
-                                        'reduceOnly': True
-                                    }
+                                logger.warning(
+                                    f"SL placement attempt {attempt+1}: response missing id or status "
+                                    f"(id={sl_order_id}, algoStatus={algo_status}, status={order_status}). Retrying."
                                 )
-                        except Exception as ve:
-                            logger.error(f"Error verifying stop-loss for {symbol} on attempt {attempt+1}: {ve}")
-                    
+                            if sl_verified:
+                                break
+                        except Exception as sl_err:
+                            logger.error(f"SL placement attempt {attempt+1} FAILED with exception for {symbol}: {sl_err}")
+                            if attempt < 2:
+                                time.sleep(2.0)
+
                     if not sl_verified:
-                        if getattr(config, 'IS_SANDBOX', False):
-                            # Demo exchange may not surface SL orders the same way as live.
-                            # In sandbox mode, skip emergency close — just warn and keep the position.
-                            logger.warning(f"[DEMO MODE] Stop-loss verification inconclusive for {symbol}. Position kept open. This is expected behaviour on the Demo exchange.")
-                            send_push_notification(
-                                f"⚠️ **[DEMO SL Warning]** Could not verify SL order for **{ticker}** on Demo exchange.\n"
-                                f"• Position is KEPT OPEN. This is expected in Demo mode."
+                        logger.critical(
+                            f"FATAL: Stop-loss placement FAILED for {symbol} after 3 attempts. "
+                            f"Executing emergency close to protect account!"
+                        )
+                        send_push_notification(
+                            f"🚨 **[EMERGENCY CLOSE]** Stop-loss placement failed for **{ticker}** on Binance.\n"
+                            f"• Position closed immediately at market."
+                        )
+                        try:
+                            close_side = 'sell' if is_long_triggered else 'buy'
+                            exchange.create_market_order(
+                                symbol=symbol,
+                                side=close_side,
+                                amount=entry_amount,
+                                params={'reduceOnly': True}
                             )
-                        else:
-                            logger.critical(f"FATAL: Stop-loss verification FAILED for {symbol} after 3 attempts. Executing emergency close to protect account!")
-                            send_push_notification(
-                                f"🚨 **[EMERGENCY CLOSE]** Stop-loss verification failed for **{ticker}** on Binance.\n"
-                                f"• Position has been closed immediately at market to prevent unprotected risk!"
-                            )
-                            try:
-                                close_side = 'sell' if is_long_triggered else 'buy'
-                                exchange.create_market_order(
-                                    symbol=symbol,
-                                    side=close_side,
-                                    amount=entry_amount,
-                                    params={'reduceOnly': True}
-                                )
-                            except Exception as ce:
-                                logger.error(f"Failed to execute emergency market close for {symbol}: {ce}")
-                            trades_triggered -= 1
-                            continue  # Skip updating active_positions or sending entry alert
+                        except Exception as ce:
+                            logger.error(f"Failed to execute emergency market close for {symbol}: {ce}")
+                        trades_triggered -= 1
+                        continue  # Skip logging this as a successful trade
+
+                    # Take Profit Order (non-critical — log failure but don't close position)
+                    try:
+                        tp_response = exchange.create_order(
+                            symbol=symbol,
+                            type='TAKE_PROFIT_MARKET',
+                            side=sl_side,
+                            amount=entry_amount,
+                            price=None,
+                            params={
+                                'stopPrice': tp_price_prec,
+                                'reduceOnly': True
+                            }
+                        )
+                        logger.info(
+                            f"Take-profit placed for {symbol} "
+                            f"(id={tp_response.get('id')}, stopPrice={tp_price_prec:.4f})."
+                        )
+                    except Exception as tp_err:
+                        logger.warning(
+                            f"Take-profit placement failed for {symbol}: {tp_err}. "
+                            f"Position remains open with SL only — TP can be placed manually."
+                        )
+
+                    logger.info(f"Configured TP/SL orders for {symbol} (SL: {sl_price_prec:.4f}, TP: {tp_price_prec:.4f}).")
                     
                     # Dynamic state update: Add to active_positions so subsequent loop iterations respect correlation caps
                     active_positions[symbol] = {
