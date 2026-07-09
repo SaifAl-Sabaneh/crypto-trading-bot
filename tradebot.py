@@ -99,13 +99,8 @@ def get_exchange_connection():
         logger.warning("No premium PROXY_URL found in environment secrets. Connecting directly.")
         
     if getattr(config, 'IS_SANDBOX', False):
-        config_dict['urls'] = {
-            'api': {
-                'public': 'https://testnet.binancefuture.com/fapi/v1',
-                'private': 'https://testnet.binancefuture.com/fapi/v1',
-            }
-        }
-        logger.info("Manual Testnet Routing Activated: Directing to testnet.binancefuture.com Futures API.")
+        config_dict.setdefault('options', {})['enableDemoTrading'] = True
+        logger.info("CCXT Demo Trading Option Activated (testnet).")
         
     exchange = ccxt.binance(config_dict)
     return exchange
