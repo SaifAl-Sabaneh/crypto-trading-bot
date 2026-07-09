@@ -901,14 +901,32 @@ def execute_live_trading():
                         sleep_time = 1.5 * (2 ** attempt)  # Exponential backoff: 1.5s, 3.0s, 6.0s
                         time.sleep(sleep_time)
                         try:
+                            # Primary check: standard open orders
                             open_orders = exchange.fetch_open_orders(symbol)
                             for order in open_orders:
                                 order_type = order.get('type', '').lower()
                                 order_side = order.get('side', '').lower()
-                                # Confirm it is a stop-market or stop order on the correct side
                                 if 'stop' in order_type and order_side == sl_side:
                                     sl_verified = True
                                     break
+                            
+                            # Secondary check: Binance routes STOP_MARKET orders through
+                            # a separate "algo/conditional" orders system (visible in
+                            # fetch_open_orders with params or in the raw info dict).
+                            # This is particularly true on the Demo exchange.
+                            if not sl_verified:
+                                try:
+                                    algo_orders = exchange.fetch_open_orders(symbol, params={'type': 'algo'})
+                                    for order in algo_orders:
+                                        info = order.get('info', {})
+                                        order_type_raw = info.get('orderType', '').upper()
+                                        algo_side = info.get('side', '').lower()
+                                        if 'STOP' in order_type_raw and algo_side == sl_side:
+                                            sl_verified = True
+                                            break
+                                except Exception:
+                                    pass  # Algo endpoint not available; rely on primary check only
+                            
                             if sl_verified:
                                 logger.info(f"Stop-loss verified active on exchange for {symbol} on attempt {attempt+1}.")
                                 break
