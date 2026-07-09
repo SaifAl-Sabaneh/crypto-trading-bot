@@ -64,7 +64,46 @@ SYMBOL_MAP = {
     'TIA-USD': 'TIA/USDT',
     'RUNE-USD': 'RUNE/USDT',
     'SAND-USD': 'SAND/USDT',
-    'LDO-USD': 'LDO/USDT'
+    'LDO-USD': 'LDO/USDT',
+    'MKR-USD': 'MKR/USDT',
+    'DYDX-USD': 'DYDX/USDT',
+    'CRV-USD': 'CRV/USDT',
+    '1INCH-USD': '1INCH/USDT',
+    'GALA-USD': 'GALA/USDT',
+    'CHZ-USD': 'CHZ/USDT',
+    'ENJ-USD': 'ENJ/USDT',
+    'ZIL-USD': 'ZIL/USDT',
+    'SUSHI-USD': 'SUSHI/USDT',
+    'YFI-USD': 'YFI/USDT',
+    'LRC-USD': 'LRC/USDT',
+    'ANKR-USD': 'ANKR/USDT',
+    'STORJ-USD': 'STORJ/USDT',
+    'KNC-USD': 'KNC/USDT',
+    'ZRX-USD': 'ZRX/USDT',
+    'OMG-USD': 'OMG/USDT',
+    'QTUM-USD': 'QTUM/USDT',
+    'ONT-USD': 'ONT/USDT',
+    'HBAR-USD': 'HBAR/USDT',
+    'XTZ-USD': 'XTZ/USDT',
+    'KAVA-USD': 'KAVA/USDT',
+    'RLC-USD': 'RLC/USDT',
+    'BAND-USD': 'BAND/USDT',
+    'SXP-USD': 'SXP/USDT',
+    'RVN-USD': 'RVN/USDT',
+    'DGB-USD': 'DGB/USDT',
+    'ICX-USD': 'ICX/USDT',
+    'DENT-USD': 'DENT/USDT',
+    'CELR-USD': 'CELR/USDT',
+    'WOO-USD': 'WOO/USDT',
+    'JASMY-USD': 'JASMY/USDT',
+    'QNT-USD': 'QNT/USDT',
+    'APE-USD': 'APE/USDT',
+    'ENS-USD': 'ENS/USDT',
+    'FLOW-USD': 'FLOW/USDT',
+    'MINA-USD': 'MINA/USDT',
+    'EGLD-USD': 'EGLD/USDT',
+    'ZEC-USD': 'ZEC/USDT',
+    'DASH-USD': 'DASH/USDT'
 }
 
 def get_exchange_connection():
@@ -353,9 +392,10 @@ def execute_live_trading():
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
                 
-            df = resample_to_4h(df)
+            if getattr(config, 'INTERVAL', '4h') == '4h':
+                df = resample_to_4h(df)
             if df.empty or len(df) < 50:
-                logger.warning(f"Insufficient 4h data for {ticker}")
+                logger.warning(f"Insufficient data for {ticker}")
                 continue
                 
             if isinstance(df.columns, pd.MultiIndex):
