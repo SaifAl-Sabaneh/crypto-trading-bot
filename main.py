@@ -16,9 +16,20 @@ from backtester import PortfolioBacktester
 def fetch_ticker_data(ticker):
     """Downloads historical asset data using yfinance with retry resiliency."""
     logger.info(f"Downloading historical data for {ticker}...")
+    
+    # Self-healing: Yahoo Finance restricts 4h and 1h data to the last 730 days.
+    # We automatically cap the start date to 720 days ago to prevent API rejections.
+    start_t = config.START_DATE
+    if config.INTERVAL in ['4h', '1h']:
+        from datetime import datetime, timedelta
+        limit_date = (datetime.now() - timedelta(days=720)).strftime("%Y-%m-%d")
+        if start_t < limit_date:
+            logger.info(f"Training Start Date ({start_t}) is older than 720 days for {config.INTERVAL} data. Auto-adjusting to rolling date {limit_date} to prevent Yahoo error.")
+            start_t = limit_date
+            
     df = yf.download(
         tickers=ticker,
-        start=config.START_DATE,
+        start=start_t,
         end=config.END_DATE,
         interval=config.INTERVAL,
         progress=False
@@ -31,6 +42,8 @@ def fetch_ticker_data(ticker):
         
     # Clean volume/prices to make sure we don't have zeros
     df = df[df['Volume'] > 0].copy()
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
     logger.info(f"Downloaded {len(df)} rows for {ticker}.")
     return df
 
@@ -56,6 +69,8 @@ def fetch_ticker_4h_data(ticker):
         df.columns = df.columns.get_level_values(0)
         
     df = df[df['Volume'] > 0].copy()
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
     logger.info(f"Downloaded {len(df)} 4h rows for {ticker}.")
     return df
 
