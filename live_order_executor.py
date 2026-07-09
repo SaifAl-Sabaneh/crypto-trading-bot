@@ -591,6 +591,13 @@ def execute_live_trading():
                         veto_log.append(f"• **{ticker}** vetoed: Correlation Cap ({target_direction} already open)")
                         allow_entry = False
                 
+                # Global Portfolio Position Cap (Limits concurrent trades to protect small capital)
+                max_active = getattr(config, 'MAX_ACTIVE_POSITIONS', 2)
+                if allow_entry and (is_long_triggered or is_short_triggered) and len(active_positions) >= max_active:
+                    logger.info(f"Portfolio Cap: VETOED entry on {symbol} — active positions count ({len(active_positions)}) is at the maximum limit ({max_active}).")
+                    veto_log.append(f"• **{ticker}** vetoed: Portfolio Cap reached ({max_active} active)")
+                    allow_entry = False
+                
                 if not allow_entry and (is_long_triggered or is_short_triggered):
                     if not is_weekend and not (current_regime == 'Sideways' and existing_direction_count >= 1):
                         logger.info(f"Regime Block: VETOED entry on {symbol} due to Crisis regime halt.")
