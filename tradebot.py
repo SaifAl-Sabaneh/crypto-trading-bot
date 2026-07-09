@@ -99,6 +99,9 @@ def get_exchange_connection():
         logger.warning("No premium PROXY_URL found in environment secrets. Connecting directly.")
         
     exchange = ccxt.binance(config_dict)
+    if getattr(config, 'IS_SANDBOX', False):
+        exchange.set_sandbox_mode(True)
+        logger.info("CCXT Sandbox Mode Activated: Connected to Binance Futures Testnet.")
     return exchange
 
 def set_leverage_and_margin(exchange, symbol, leverage=None):
