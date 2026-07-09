@@ -782,6 +782,16 @@ def execute_live_trading():
                     # Execute entry market order
                     order_side = 'buy' if is_long_triggered else 'sell'
                     entry_amount = float(exchange.amount_to_precision(symbol, units))
+                    
+                    # Sizing Guard (Check if exchange minimums force size to exceed max allowed notional risk budget)
+                    max_notional_pct = getattr(config, 'MAX_NOTIONAL_ALLOCATION_PCT', 0.50)
+                    max_notional_allowed = usdt_balance * max_notional_pct
+                    actual_notional = entry_amount * latest_close
+                    if actual_notional > max_notional_allowed:
+                        logger.warning(f"Sizing Guard: VETOED entry on {symbol}. Rounded notional size (${actual_notional:.2f}) exceeds the maximum allowed notional allocation (${max_notional_allowed:.2f}, {max_notional_pct*100}% of balance). This is caused by exchange minimum trade limits.")
+                        veto_log.append(f"• **{ticker}** vetoed: Sizing Guard (minimum size too large)")
+                        continue
+                    
                     entry_order = exchange.create_market_order(
                         symbol=symbol,
                         side=order_side,
@@ -841,6 +851,57 @@ def execute_live_trading():
                     )
                     
                     logger.info(f"Configured TP/SL orders for {symbol} (SL: {sl_price_prec:.4f}, TP: {tp_price_prec:.4f}).")
+                    
+                    # Stop-Loss Verification Loop (Query exchange to confirm SL is active, retry if missing, close if fails)
+                    sl_verified = False
+                    for attempt in range(3):
+                        time.sleep(1.5)  # Wait for exchange state update
+                        try:
+                            open_orders = exchange.fetch_open_orders(symbol)
+                            for order in open_orders:
+                                order_type = order.get('type', '').lower()
+                                order_side = order.get('side', '').lower()
+                                # Confirm it is a stop-market or stop order on the correct side
+                                if 'stop' in order_type and order_side == sl_side:
+                                    sl_verified = True
+                                    break
+                            if sl_verified:
+                                logger.info(f"Stop-loss verified active on exchange for {symbol} on attempt {attempt+1}.")
+                                break
+                            else:
+                                logger.warning(f"Verification Attempt {attempt+1}: Stop-loss order not found on exchange for {symbol}. Retrying placement...")
+                                exchange.create_order(
+                                    symbol=symbol,
+                                    type='STOP_MARKET',
+                                    side=sl_side,
+                                    amount=entry_amount,
+                                    price=None,
+                                    params={
+                                        'stopPrice': sl_price_prec,
+                                        'reduceOnly': True
+                                    }
+                                )
+                        except Exception as ve:
+                            logger.error(f"Error verifying stop-loss for {symbol} on attempt {attempt+1}: {ve}")
+                    
+                    if not sl_verified:
+                        logger.critical(f"FATAL: Stop-loss verification FAILED for {symbol} after 3 attempts. Executing emergency close to protect account!")
+                        send_push_notification(
+                            f"🚨 **[EMERGENCY CLOSE]** Stop-loss verification failed for **{ticker}** on Binance.\n"
+                            f"• Position has been closed immediately at market to prevent unprotected risk!"
+                        )
+                        try:
+                            close_side = 'sell' if is_long_triggered else 'buy'
+                            exchange.create_market_order(
+                                symbol=symbol,
+                                side=close_side,
+                                amount=entry_amount,
+                                params={'reduceOnly': True}
+                            )
+                        except Exception as ce:
+                            logger.error(f"Failed to execute emergency market close for {symbol}: {ce}")
+                        trades_triggered -= 1
+                        continue  # Skip updating active_positions or sending entry alert
                     
                     # Dynamic state update: Add to active_positions so subsequent loop iterations respect correlation caps
                     active_positions[symbol] = {
