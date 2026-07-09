@@ -201,12 +201,22 @@ def check_active_positions(exchange):
     return active_positions
 
 def cancel_all_orders(exchange, symbol):
-    """Cancels all open orders for a specific symbol."""
+    """Cancels all open orders (standard and algo) for a specific symbol."""
+    # 1. Cancel standard open orders
     try:
         exchange.cancel_all_orders(symbol)
-        logger.info(f"Cancelled all open orders for {symbol}.")
+        logger.info(f"Cancelled all open standard orders for {symbol}.")
     except Exception as e:
-        logger.warning(f"Could not cancel orders for {symbol}: {e}")
+        logger.warning(f"Could not cancel standard orders for {symbol}: {e}")
+
+    # 2. Cancel open algo orders (Binance Futures routes stop orders here)
+    try:
+        if hasattr(exchange, 'fapiPrivateDeleteAlgoOpenOrders'):
+            raw_symbol = symbol.replace('/', '').split(':')[0].upper()
+            exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': raw_symbol})
+            logger.info(f"Cancelled all open algo orders for {symbol}.")
+    except Exception as e:
+        logger.warning(f"Could not cancel algo orders for {symbol}: {e}")
 
 def find_active_stop_loss_order(exchange, symbol, sl_side):
     """
