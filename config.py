@@ -82,7 +82,7 @@ HMM_LOOKBACK = 60              # Minimum bars needed to fit HMM
 
 # Kelly Criterion Dynamic Sizing
 USE_KELLY_SIZING = True       # Enable Kelly Criterion (uses dynamic allocation based on model confidence)
-KELLY_FRACTION = 0.5           # Half-Kelly for safety (full Kelly is too aggressive)
+KELLY_FRACTION = 0.25           # Quarter-Kelly for safety (reduced from 0.5 to protect against unconfirmed edge)
 KELLY_MAX_ALLOC = MAX_ALLOCATION_PER_TRADE  # Cap Kelly sizing at max allocation
 KELLY_MIN_ALLOC = 0.05         # Minimum allocation floor (5%) if signal fires
 
@@ -111,7 +111,7 @@ LSTM_SEQUENCE_LENGTH = 20      # Number of past bars fed into LSTM as context wi
 LSTM_HIDDEN_SIZE = 32          # Number of hidden units in LSTM cell
 
 # RL Agent
-USE_RL_AGENT = True            # Enable RL agent veto layer to protect capital and boost profit margins
+USE_RL_AGENT = False            # Enable RL agent veto layer to protect capital and boost profit margins
 
 
 # ----------------- PROFIT SWEEP & SPOT REBALANCER -----------------
@@ -144,7 +144,7 @@ ENABLE_OI_FILTER = True
 OI_PERIOD = "4h"
 
 # ----------------- TAKER BUY/SELL RATIO -----------------
-ENABLE_TAKER_FILTER = True
+ENABLE_TAKER_FILTER = False
 TAKER_PERIOD = "4h"
 TAKER_LIMIT_LONG = 1.0             # Do not long if taker buy/sell ratio < 1.0
 TAKER_LIMIT_SHORT = 1.0            # Do not short if taker buy/sell ratio > 1.0
