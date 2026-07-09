@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import config
 from model import EnsembleTradingModel
 from features import build_features
