@@ -57,7 +57,7 @@ ENABLE_DYNAMIC_LEVERAGE = True  # Enable volatility-adjusted leverage
 LEVERAGE_VOL_LOW = 25          # Calm squeezes get 25x leverage
 LEVERAGE_VOL_HIGH = 10         # High-volatility panic gets 10x leverage
 MAX_ACTIVE_POSITIONS = 10       # Max concurrent open positions allowed across the entire portfolio (to protect small capital from over-exposure)
-MAX_NOTIONAL_ALLOCATION_PCT = 0.50 # Max notional value of a single trade as a % of account balance (prevents exchange-minimum over-sizing)
+MAX_NOTIONAL_ALLOCATION_PCT = 3.0 # Max notional value of a single trade as a % of account balance (prevents exchange-minimum over-sizing)
 
 ENABLE_SENTIMENT_SIZING = True  # Scale position sizes based on global news sentiment
 SENTIMENT_SIZE_ALIGNED = 1.0    # 100% allocation if AI signal aligns with news sentiment
