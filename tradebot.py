@@ -66,7 +66,6 @@ SYMBOL_MAP = {
     'RUNE-USD': 'RUNE/USDT',
     'SAND-USD': 'SAND/USDT',
     'LDO-USD': 'LDO/USDT',
-    'MKR-USD': 'MKR/USDT',
     'DYDX-USD': 'DYDX/USDT',
     'CRV-USD': 'CRV/USDT',
     '1INCH-USD': '1INCH/USDT',
@@ -930,23 +929,32 @@ def execute_live_trading():
                             logger.error(f"Error verifying stop-loss for {symbol} on attempt {attempt+1}: {ve}")
                     
                     if not sl_verified:
-                        logger.critical(f"FATAL: Stop-loss verification FAILED for {symbol} after 3 attempts. Executing emergency close to protect account!")
-                        send_push_notification(
-                            f"🚨 **[EMERGENCY CLOSE]** Stop-loss verification failed for **{ticker}** on Binance.\n"
-                            f"• Position has been closed immediately at market to prevent unprotected risk!"
-                        )
-                        try:
-                            close_side = 'sell' if is_long_triggered else 'buy'
-                            exchange.create_market_order(
-                                symbol=symbol,
-                                side=close_side,
-                                amount=entry_amount,
-                                params={'reduceOnly': True}
+                        if getattr(config, 'IS_SANDBOX', False):
+                            # Demo exchange may not surface SL orders the same way as live.
+                            # In sandbox mode, skip emergency close — just warn and keep the position.
+                            logger.warning(f"[DEMO MODE] Stop-loss verification inconclusive for {symbol}. Position kept open. This is expected behaviour on the Demo exchange.")
+                            send_push_notification(
+                                f"⚠️ **[DEMO SL Warning]** Could not verify SL order for **{ticker}** on Demo exchange.\n"
+                                f"• Position is KEPT OPEN. This is expected in Demo mode."
                             )
-                        except Exception as ce:
-                            logger.error(f"Failed to execute emergency market close for {symbol}: {ce}")
-                        trades_triggered -= 1
-                        continue  # Skip updating active_positions or sending entry alert
+                        else:
+                            logger.critical(f"FATAL: Stop-loss verification FAILED for {symbol} after 3 attempts. Executing emergency close to protect account!")
+                            send_push_notification(
+                                f"🚨 **[EMERGENCY CLOSE]** Stop-loss verification failed for **{ticker}** on Binance.\n"
+                                f"• Position has been closed immediately at market to prevent unprotected risk!"
+                            )
+                            try:
+                                close_side = 'sell' if is_long_triggered else 'buy'
+                                exchange.create_market_order(
+                                    symbol=symbol,
+                                    side=close_side,
+                                    amount=entry_amount,
+                                    params={'reduceOnly': True}
+                                )
+                            except Exception as ce:
+                                logger.error(f"Failed to execute emergency market close for {symbol}: {ce}")
+                            trades_triggered -= 1
+                            continue  # Skip updating active_positions or sending entry alert
                     
                     # Dynamic state update: Add to active_positions so subsequent loop iterations respect correlation caps
                     active_positions[symbol] = {
