@@ -530,8 +530,6 @@ def execute_live_trading():
         try:
             import yfinance as yf
             from features import resample_to_4h
-            from datetime import datetime, timedelta
-            
             # Download 1h data (from last 75 days for speed and safety) and resample to 4h
             start_date = (datetime.now() - timedelta(days=75)).strftime("%Y-%m-%d")
             df = yf.download(ticker, start=start_date, interval="1h", progress=False)
