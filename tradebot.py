@@ -458,6 +458,73 @@ def execute_live_trading():
     trades_triggered = 0
     veto_log = []
 
+    # 3b. Load open positions state and reconcile exchange-side closures
+    open_positions_state = {}
+    state_path = 'open_positions.json'
+    if os.path.exists(state_path):
+        try:
+            import json
+            with open(state_path, 'r') as f:
+                open_positions_state = json.load(f)
+        except Exception as se:
+            logger.warning(f"Failed to load open positions state: {se}")
+
+    # Reconcile closed positions: if symbol was in open_positions_state but not in active_positions
+    for symbol in list(open_positions_state.keys()):
+        if symbol not in active_positions:
+            logger.info(f"Reconciliation: Detected closed position for {symbol}. Fetching exit details...")
+            try:
+                # Fetch last trade fills for this symbol
+                closed_trades = exchange.fetch_my_trades(symbol, limit=5)
+                if closed_trades:
+                    closed_trades.sort(key=lambda x: x['timestamp'], reverse=True)
+                    latest_fill = closed_trades[0]
+                    
+                    exit_price = float(latest_fill['price'])
+                    exit_time_str = datetime.fromtimestamp(latest_fill['timestamp'] / 1000.0).strftime("%Y-%m-%d %H:%M")
+                    
+                    pos_state = open_positions_state[symbol]
+                    pnl_pct = (exit_price - pos_state['entry_price']) / pos_state['entry_price'] if pos_state['side'] == 'long' else (pos_state['entry_price'] - exit_price) / pos_state['entry_price']
+                    pnl_usd = float(latest_fill.get('info', {}).get('realizedPnl', 0.0) or (pnl_pct * pos_state['entry_price'] * pos_state['size']))
+                    
+                    new_trade = {
+                        'Ticker': symbol.split("/")[0] + "-USD",
+                        'Direction': 'Long' if pos_state['side'] == 'long' else 'Short',
+                        'EntryTime': pos_state.get('entry_time', datetime.now().strftime("%Y-%m-%d %H:%M")),
+                        'ExitTime': exit_time_str,
+                        'EntryPrice': pos_state['entry_price'],
+                        'ExitPrice': exit_price,
+                        'PnL_Pct': pnl_pct,
+                        'PnL_USD': pnl_usd,
+                        'ExitReason': 'Exchange_Stop_Loss_or_Take_Profit'
+                    }
+                    
+                    trade_history.append(new_trade)
+                    pd.DataFrame(trade_history).to_csv(csv_path, index=False)
+                    
+                    if rl_agent is not None:
+                        rl_agent.update(pnl_pct)
+                        
+                    send_push_notification(
+                        f"🔴 **[EXIT]** Position on **{symbol}** closed by exchange stop-loss or take-profit.\n"
+                        f"• Exit Price: `${exit_price:,.4f}`\n"
+                        f"• PnL: **{pnl_pct:+.2%}** (${pnl_usd:+.2f})"
+                    )
+            except Exception as re:
+                logger.error(f"Failed to reconcile exit for {symbol}: {re}")
+            
+            open_positions_state.pop(symbol, None)
+
+    # Sync exchange positions to state
+    for symbol, pos in active_positions.items():
+        if symbol not in open_positions_state:
+            open_positions_state[symbol] = {
+                'size': pos['size'],
+                'side': pos['side'],
+                'entry_price': pos['entry_price'],
+                'entry_time': datetime.now().strftime("%Y-%m-%d %H:%M")
+            }
+
     # 4. Generate today's signals and run execution for crypto assets
     for ticker, symbol in SYMBOL_MAP.items():
         try:
@@ -1198,6 +1265,26 @@ def execute_live_trading():
         logger.info("Daily summary sent to Discord.")
     except Exception as e:
         logger.error(f"Failed to send daily summary: {e}")
+
+    # 7. Finalize and save the reconciled open positions state
+    try:
+        final_active = check_active_positions(exchange)
+        cleaned_state = {}
+        for symbol in final_active:
+            if symbol in open_positions_state:
+                cleaned_state[symbol] = open_positions_state[symbol]
+            else:
+                cleaned_state[symbol] = {
+                    'size': final_active[symbol]['size'],
+                    'side': final_active[symbol]['side'],
+                    'entry_price': final_active[symbol]['entry_price'],
+                    'entry_time': datetime.now().strftime("%Y-%m-%d %H:%M")
+                }
+        with open(state_path, 'w') as f:
+            json.dump(cleaned_state, f, indent=4)
+        logger.info("Saved open positions state successfully.")
+    except Exception as e:
+        logger.error(f"Failed to save open positions state: {e}")
 
 def update_live_dashboard(usdt_balance):
     """
