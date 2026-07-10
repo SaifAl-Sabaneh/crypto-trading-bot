@@ -420,7 +420,7 @@ class PortfolioBacktester:
         final_date = all_dates[-1]
         for ticker in list(positions.keys()):
             pos = positions[ticker]
-            close_val = test_dfs[ticker].loc[final_date, 'Close']
+            close_val = float(test_dfs[ticker]['Close'].iloc[-1])
             is_long = pos.get('direction', 'long') == 'long'
             
             if is_long:
