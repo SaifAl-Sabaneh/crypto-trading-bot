@@ -1,22 +1,22 @@
 {
   "campaign_id": "CARRY-PAPER-V1-20260720",
   "strategy_hash": "3965622973c9fdc2",
-  "settlements_logged": 5,
-  "days_observed": 0.005578668981481481,
+  "settlements_logged": 7,
+  "days_observed": 0.24269489583333334,
   "statistical_confidence": {
-    "settlements_logged": 5,
+    "settlements_logged": 7,
     "minimum_required": 90,
     "confidence_status": "PENDING_SAMPLES"
   },
   "gate_results": {
     "paper_duration": {
       "required": 30.0,
-      "actual": 0.005578668981481481,
+      "actual": 0.24269489583333334,
       "passed": false
     },
     "settlements": {
       "required": 90,
-      "actual": 5,
+      "actual": 7,
       "passed": false
     },
     "execution_drift": {
@@ -31,7 +31,7 @@
     },
     "funding_persistence": {
       "limit": 75.0,
-      "actual": 100.0,
+      "actual": 85.71428571428571,
       "passed": true
     },
     "operational_failures": {
@@ -46,7 +46,7 @@
     "net_realized_return_pct": 0.0,
     "max_drawdown_pct": 0.0,
     "execution_drift_pct": 0.0,
-    "funding_persistence_pct": 100.0
+    "funding_persistence_pct": 85.71428571428571
   },
   "operational_metrics": {
     "kill_switch_events": 0,
@@ -56,11 +56,11 @@
   "attribution_summary": [
     {
       "Symbol": "BTCUSDT",
-      "Obs_Cycles": 5,
-      "Avg_Basis": "-0.042%",
+      "Obs_Cycles": 7,
+      "Avg_Basis": "-0.036%",
       "Max_Basis": "0.067%",
-      "Avg_8h_FR": "+0.0048%",
-      "Observed_APR": "+5.26%",
+      "Avg_8h_FR": "+0.0040%",
+      "Observed_APR": "+4.38%",
       "Capture_Eff": "0.0%",
       "Gross_Funding": "$0.00",
       "Trading_Fees": "$0.00",
@@ -68,11 +68,11 @@
     },
     {
       "Symbol": "ETHUSDT",
-      "Obs_Cycles": 5,
-      "Avg_Basis": "-0.036%",
-      "Max_Basis": "0.052%",
-      "Avg_8h_FR": "+0.0029%",
-      "Observed_APR": "+3.21%",
+      "Obs_Cycles": 7,
+      "Avg_Basis": "-0.034%",
+      "Max_Basis": "0.058%",
+      "Avg_8h_FR": "+0.0026%",
+      "Observed_APR": "+2.87%",
       "Capture_Eff": "0.0%",
       "Gross_Funding": "$0.00",
       "Trading_Fees": "$0.00",
