@@ -2,9 +2,9 @@ name: Carry Strategy 24/7 Paper Observer
 
 on:
   schedule:
-    # Run every hour to record basis spreads, API health, and funding rate updates
-    - cron: '0 * * * *'
-  workflow_dispatch: # Allows manual trigger anytime from GitHub Actions tab
+    # Use non-congested minute (17 past the hour) to avoid GitHub top-of-the-hour runner queue delays
+    - cron: '17 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
