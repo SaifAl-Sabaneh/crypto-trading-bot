@@ -2,7 +2,7 @@
   "campaign_id": "CARRY-PAPER-V1-20260720",
   "strategy_hash": "3965622973c9fdc2",
   "settlements_logged": 7,
-  "days_observed": 0.9694293055555555,
+  "days_observed": 1.0094233449074073,
   "statistical_confidence": {
     "settlements_logged": 7,
     "minimum_required": 90,
@@ -11,7 +11,7 @@
   "gate_results": {
     "paper_duration": {
       "required": 30.0,
-      "actual": 0.9694293055555555,
+      "actual": 1.0094233449074073,
       "passed": false
     },
     "settlements": {
